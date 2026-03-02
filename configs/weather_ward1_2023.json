@@ -1,0 +1,13 @@
+{
+  "label": "weather_ward1_2023",
+  "ward": "Ward 1",
+  "description": "Hourly weather for the Ward 1 service-request centroid, 2023 analysis window. start_date is 2022-12-01 (31-day buffer) so the full 30-day freeze-thaw cycle lookback window is available for every day in January 2023.",
+  "api_url": "https://archive-api.open-meteo.com/v1/archive",
+  "start_date": "2022-12-01",
+  "end_date": "2023-12-31",
+  "variables": ["temperature_2m", "precipitation", "snowfall"],
+  "timezone": "America/New_York",
+  "latitude_source": "mean LATITUDE of all Ward 1 service requests in All_Service_Requests_-_2023.csv",
+  "longitude_source": "mean LONGITUDE of all Ward 1 service requests in All_Service_Requests_-_2023.csv",
+  "notes": "latitude and longitude are computed at runtime and recorded in weather_cache/<label>_metadata.json alongside the parquet file."
+}
