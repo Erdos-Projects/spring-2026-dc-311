@@ -1,11 +1,2 @@
-# Ignore CSV files
-*.csv
-
-# requests-cache SQLite files
-.cache/
-
-# Raw weather CSV cache (recreate via load_or_fetch)
-weather_cache/
-
-# Scratch images directory
-temp_images/
+311_City_Service_Requests_in_2022.csv
+All_Service_Requests_-_2017.csv
