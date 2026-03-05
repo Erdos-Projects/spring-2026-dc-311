@@ -1,0 +1,17 @@
+{
+  "label": "weather_ward6_2022_api",
+  "ward": "Ward 6",
+  "description": "Hourly weather for the Ward 6 service-request centroid, 2022 analysis window. start_date is 2021-12-01 (31-day buffer) so the full 15-day lookback window is available for early January 2022.",
+  "api_url": "https://archive-api.open-meteo.com/v1/archive",
+  "start_date": "2021-12-01",
+  "end_date": "2022-12-31",
+  "variables": [
+    "temperature_2m",
+    "precipitation",
+    "snowfall"
+  ],
+  "timezone": "America/New_York",
+  "latitude_source": "mean LATITUDE of 2022 311 rows in this ward",
+  "longitude_source": "mean LONGITUDE of 2022 311 rows in this ward",
+  "notes": "latitude and longitude are computed at runtime and recorded in weather_cache/<label>_metadata.json alongside cached weather rows."
+}
