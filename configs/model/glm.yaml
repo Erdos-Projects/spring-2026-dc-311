@@ -1,0 +1,2 @@
+_target_: modeling.models.glm.NegBinGLM
+alpha: 1.0

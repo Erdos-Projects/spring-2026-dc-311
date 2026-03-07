@@ -1,0 +1,4 @@
+name: ward3
+ward_label: "Ward 3"
+raw_311: ${root}/All_Service_Requests_-_2023.csv
+weather_cache: ${root}/weather_cache/weather_ward3_2023.csv

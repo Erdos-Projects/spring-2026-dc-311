@@ -1,3 +1,13 @@
-311_City_Service_Requests_in_2022.csv
-All_Service_Requests_-_2017.csv
-weather_cache_2022_api/
+# all csv files
+*.csv
+
+# all json files
+# *.json
+
+# all yaml files
+# *.yaml
+
+# all txt files
+# *.txt
+
+# all log files

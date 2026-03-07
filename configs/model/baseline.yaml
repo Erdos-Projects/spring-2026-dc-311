@@ -1,0 +1,2 @@
+_target_: modeling.models.baseline.SeasonalNaive
+lag_days: 7

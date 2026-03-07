@@ -1,0 +1,5 @@
+_target_: modeling.models.gbm.XGBModel
+n_estimators: 300
+learning_rate: 0.05
+max_depth: 6
+objective: "count:poisson"
