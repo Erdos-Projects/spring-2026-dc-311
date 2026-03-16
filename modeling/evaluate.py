@@ -1,14 +1,13 @@
 """
 Evaluate the saved model on the held-out test set.
 
-Loads results/model_{ward}_{model_name}.pkl, assembles features using the
-saved feature params, applies the split, and evaluates on test rows.
-Saves metrics JSON + diagnostic plots.
+Loads the model from results/{stem}/model.pkl via the run config YAML,
+assembles features using the saved feature params, applies the split,
+and evaluates on the held-out test rows.
 
 Usage:
-    python -m modeling.evaluate
-    python -m modeling.evaluate model=lgbm
-    python -m modeling.evaluate --config-name first_try
+    python -m modeling.evaluate load_model=ward3_negbin_glm_20221201_20231231_20260316_da02efec
+    python -m modeling.evaluate load_model=<stem> --config-name first_try
 """
 
 import json
@@ -22,7 +21,7 @@ import hydra
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 
 from modeling.data.master import build_daily
 from modeling.features import assemble_features
@@ -30,38 +29,38 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.split import make_split
 
 
-def _load_run(cfg: DictConfig) -> Path:
+def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
     """
-    Locate the model pkl via the run config YAML written at train time.
+    Load the run config YAML written at train time.
 
-    Reads results/run_{ward}_{model_name}_{wx_range}_{run_id}.yaml and
-    returns the model_path recorded inside it.  cfg.load_model must be set
-    to the run_id printed at train time.
+    Opens results/{stem}/run.yaml, reconstitutes it as a DictConfig containing
+    the full training config plus run metadata, and returns (model_path, run_cfg).
+    cfg.load_model must be set to the stem printed at train time.
     """
-    run_id = cfg.get("run_id", None)
-    if not run_id:
+    stem = cfg.get("load_model", None)
+    if not stem:
         raise ValueError(
             "cfg.load_model is not set. "
-            "Pass load_model=<run_id> printed at train time, e.g.:\n"
-            "  python -m modeling.evaluate load_model=20260316_0c29fda0"
+            "Pass load_model=<stem> printed at train time, e.g.:\n"
+            "  python -m modeling.evaluate "
+            "load_model=ward3_negbin_glm_20221201_20231231_20260316_da02efec"
         )
 
-    matches = list(Path("results").glob(f"run_{cfg.ward.name}_*_{run_id}.yaml"))
-    if not matches:
-        raise FileNotFoundError(
-            f"No run config found for ward={cfg.ward.name} run_id={run_id} "
-            f"in results/. Check that training completed successfully."
-        )
+    run_cfg_path = Path("results") / stem / "run.yaml"
+    if not run_cfg_path.exists():
+        raise FileNotFoundError(f"No run config found at {run_cfg_path}.")
 
-    with open(matches[0]) as f:
-        run_cfg = yaml.safe_load(f)
+    with open(run_cfg_path) as f:
+        run_data = yaml.safe_load(f)
 
-    model_path = Path(run_cfg["model_path"])
+    model_path = Path(run_data["model_path"])
     if not model_path.exists():
         raise FileNotFoundError(
             f"Run config points to {model_path} but that file does not exist."
         )
-    return model_path
+
+    run_cfg = OmegaConf.create(run_data)
+    return model_path, run_cfg
 
 
 def evaluate(cfg: DictConfig) -> dict:
@@ -71,16 +70,16 @@ def evaluate(cfg: DictConfig) -> dict:
       - results/plots/residuals_{ward}_{model}.png
       - results/plots/shap_{ward}_{model}.png  (tree models only)
     """
-    model_path = _load_run(cfg)
+    model_path, run_cfg = _load_run(cfg)
     with open(model_path, "rb") as f:
         saved = pickle.load(f)
     model = saved["model"]
     feature_cols = saved["feature_cols"]
     feat_params = SimpleNamespace(**saved["feat_params"])
 
-    pothole_df, weather_df = build_daily(cfg)
+    pothole_df, weather_df = build_daily(run_cfg)
     feat_df = assemble_features(pothole_df, weather_df, feat_params)
-    feat_df = make_split(feat_df, cfg.split)
+    feat_df = make_split(feat_df, run_cfg.split)
 
     test_df = feat_df[feat_df["split"] == "test"]
     X_test = test_df[feature_cols]
@@ -103,7 +102,7 @@ def evaluate(cfg: DictConfig) -> dict:
 
     # ── Save metrics ──────────────────────────────────────────────────────────
     Path("results").mkdir(exist_ok=True)
-    metrics_path = Path("results") / f"test_metrics_{cfg.ward.name}_{model.name}.json"
+    metrics_path = Path("results") / f"test_metrics_{run_cfg.ward.name}_{model.name}.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
@@ -120,7 +119,7 @@ def evaluate(cfg: DictConfig) -> dict:
     axes[0].axhline(0, color="red", lw=1, ls="--")
     axes[0].set_xlabel("Date")
     axes[0].set_ylabel("Residual (actual − predicted)")
-    axes[0].set_title(f"Residuals vs Date · {model.name} · {cfg.ward.name}")
+    axes[0].set_title(f"Residuals vs Date · {model.name} · {run_cfg.ward.name}")
 
     lo = min(float(preds.min()), float(y_test.min()))
     hi = max(float(preds.max()), float(y_test.max()))
@@ -131,7 +130,7 @@ def evaluate(cfg: DictConfig) -> dict:
     axes[1].set_title("Predicted vs Actual")
 
     plt.tight_layout()
-    fig.savefig(plots_dir / f"residuals_{cfg.ward.name}_{model.name}.png", dpi=150)
+    fig.savefig(plots_dir / f"residuals_{run_cfg.ward.name}_{model.name}.png", dpi=150)
     plt.close(fig)
 
     # ── SHAP (tree models) ────────────────────────────────────────────────────
@@ -145,11 +144,11 @@ def evaluate(cfg: DictConfig) -> dict:
             shap.summary_plot(shap_vals, X_test, show=False)
             plt.tight_layout()
             fig.savefig(
-                plots_dir / f"shap_{cfg.ward.name}_{model.name}.png",
+                plots_dir / f"shap_{run_cfg.ward.name}_{model.name}.png",
                 dpi=150, bbox_inches="tight",
             )
             plt.close(fig)
-            print(f"SHAP plot saved → {plots_dir / f'shap_{cfg.ward.name}_{model.name}.png'}")
+            print(f"SHAP plot saved → {plots_dir / f'shap_{run_cfg.ward.name}_{model.name}.png'}")
         except Exception as exc:
             print(f"SHAP plot skipped: {exc}")
 

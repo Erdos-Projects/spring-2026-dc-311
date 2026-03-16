@@ -24,7 +24,7 @@ import yaml
 import hydra
 import numpy as np
 import pandas as pd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, OmegaConf
 from sklearn.model_selection import StratifiedKFold
 
 from modeling.data.master import build_daily
@@ -77,13 +77,15 @@ def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
 
 def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg) -> tuple[Path, Path]:
     """
-    Persist the fitted model pkl and the run config YAML to results/.
+    Persist the fitted model pkl and the run config YAML to results/{stem}/.
 
     Returns (model_path, run_cfg_path).
     """
-    Path("results").mkdir(exist_ok=True)
-    model_path   = Path("results") / f"model_{stem}.pkl"
-    run_cfg_path = Path("results") / f"run_{stem}.yaml"
+    run_dir = Path("results") / stem
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    model_path   = run_dir / "model.pkl"
+    run_cfg_path = run_dir / "run.yaml"
 
     with open(model_path, "wb") as f:
         pickle.dump({
@@ -96,25 +98,25 @@ def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg) ->
         }, f)
 
     with open(run_cfg_path, "w") as f:
-        yaml.dump({
-            "model_path": str(model_path),
-            "ward":       cfg.ward.name,
-            "model_name": model.name,
-            "wx_range":   wx_range,
-            "run_id":     run_id,
-        }, f, default_flow_style=False)
+        run_data = OmegaConf.to_container(cfg, resolve=True)
+        run_data["model_path"] = str(model_path)
+        run_data["run_id"]     = run_id
+        run_data["wx_range"]   = wx_range
+        run_data["model_name"] = model.name
+        yaml.dump(run_data, f, default_flow_style=False)
 
     return model_path, run_cfg_path
 
 
 def save_results(metrics: dict, stem: str) -> Path:
     """
-    Persist training metrics to results/train_metrics_{stem}.json.
+    Persist training metrics to results/{stem}/train_metrics.json.
 
     Returns the metrics file path.
     """
-    Path("results").mkdir(exist_ok=True)
-    metrics_path = Path("results") / f"train_metrics_{stem}.json"
+    run_dir = Path("results") / stem
+    run_dir.mkdir(parents=True, exist_ok=True)
+    metrics_path = run_dir / "train_metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     return metrics_path
