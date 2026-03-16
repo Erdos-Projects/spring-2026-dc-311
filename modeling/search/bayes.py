@@ -27,10 +27,11 @@ from modeling.metrics import mae, poisson_deviance
 from modeling.split import make_split
 
 
-def _score_params(master_df: pd.DataFrame, cfg_split, params: dict) -> float:
+def _score_params(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
+                  cfg_split, params: dict) -> float:
     """Return validation MAE for a given parameter dict (Ridge proxy)."""
     try:
-        feat_df = assemble_features(master_df, SimpleNamespace(**params))
+        feat_df = assemble_features(pothole_df, weather_df, SimpleNamespace(**params))
         feat_df = make_split(feat_df, cfg_split)
 
         feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
@@ -61,7 +62,7 @@ def run_bayes(cfg: DictConfig) -> dict:
         print(f"[dry-run] Would run Bayesian search for ward={cfg.ward.name}")
         return {}
 
-    master_df = build_daily(cfg)
+    pothole_df, weather_df = build_daily(cfg)
     bayes_cfg = cfg.search
     ss = bayes_cfg.search_space
     param_names = ["d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f", "k_AR"]
@@ -77,7 +78,7 @@ def run_bayes(cfg: DictConfig) -> dict:
             "l_f":  trial.suggest_int("l_f",  ss.l_f.low,  ss.l_f.high),
             "k_AR": trial.suggest_int("k_AR", ss.k_AR.low, ss.k_AR.high),
         }
-        return _score_params(master_df, cfg.split, params)
+        return _score_params(pothole_df, weather_df, cfg.split, params)
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study = optuna.create_study(

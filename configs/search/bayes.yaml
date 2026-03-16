@@ -5,10 +5,10 @@ sampler: TPESampler
 top_k_warmstart: 20
 search_space:
   d:    {low: 1,  high: 10}
-  d_p:  {low: 7,  high: 30}
-  l_p:  {low: 0,  high: 20}
-  d_s:  {low: 7,  high: 30}
-  l_s:  {low: 0,  high: 20}
-  d_f:  {low: 7,  high: 30}
-  l_f:  {low: 0,  high: 20}
-  k_AR: {low: 5,  high: 20}
+  d_p:  {low: 7,  high: 21}
+  l_p:  {low: 0,  high: 10}
+  d_s:  {low: 7,  high: 21}
+  l_s:  {low: 0,  high: 10}
+  d_f:  {low: 7,  high: 21}
+  l_f:  {low: 0,  high: 10}
+  k_AR: {low: 0,  high: 10}

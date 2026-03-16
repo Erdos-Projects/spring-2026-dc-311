@@ -16,6 +16,8 @@ import pickle
 from pathlib import Path
 from types import SimpleNamespace
 
+import yaml
+
 import hydra
 import matplotlib.pyplot as plt
 import numpy as np
@@ -28,20 +30,38 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.split import make_split
 
 
-def _find_model(cfg: DictConfig):
-    """Find the most recently written model pkl for this ward."""
-    results_dir = Path("results")
-    # Prefer exact name match; fall back to any pkl for this ward
-    exact = results_dir / f"model_{cfg.ward.name}_{cfg.model._target_.split('.')[-1].lower().replace('model', '')}.pkl"
-    if exact.exists():
-        return exact
-    candidates = sorted(results_dir.glob(f"model_{cfg.ward.name}_*.pkl"),
-                        key=lambda p: p.stat().st_mtime, reverse=True)
-    if not candidates:
-        raise FileNotFoundError(
-            f"No model file found in {results_dir}. Run 'python -m modeling.train' first."
+def _load_run(cfg: DictConfig) -> Path:
+    """
+    Locate the model pkl via the run config YAML written at train time.
+
+    Reads results/run_{ward}_{model_name}_{wx_range}_{run_id}.yaml and
+    returns the model_path recorded inside it.  cfg.load_model must be set
+    to the run_id printed at train time.
+    """
+    run_id = cfg.get("run_id", None)
+    if not run_id:
+        raise ValueError(
+            "cfg.load_model is not set. "
+            "Pass load_model=<run_id> printed at train time, e.g.:\n"
+            "  python -m modeling.evaluate load_model=20260316_0c29fda0"
         )
-    return candidates[0]
+
+    matches = list(Path("results").glob(f"run_{cfg.ward.name}_*_{run_id}.yaml"))
+    if not matches:
+        raise FileNotFoundError(
+            f"No run config found for ward={cfg.ward.name} run_id={run_id} "
+            f"in results/. Check that training completed successfully."
+        )
+
+    with open(matches[0]) as f:
+        run_cfg = yaml.safe_load(f)
+
+    model_path = Path(run_cfg["model_path"])
+    if not model_path.exists():
+        raise FileNotFoundError(
+            f"Run config points to {model_path} but that file does not exist."
+        )
+    return model_path
 
 
 def evaluate(cfg: DictConfig) -> dict:
@@ -51,15 +71,15 @@ def evaluate(cfg: DictConfig) -> dict:
       - results/plots/residuals_{ward}_{model}.png
       - results/plots/shap_{ward}_{model}.png  (tree models only)
     """
-    model_path = _find_model(cfg)
+    model_path = _load_run(cfg)
     with open(model_path, "rb") as f:
         saved = pickle.load(f)
     model = saved["model"]
     feature_cols = saved["feature_cols"]
     feat_params = SimpleNamespace(**saved["feat_params"])
 
-    master_df = build_daily(cfg)
-    feat_df = assemble_features(master_df, feat_params)
+    pothole_df, weather_df = build_daily(cfg)
+    feat_df = assemble_features(pothole_df, weather_df, feat_params)
     feat_df = make_split(feat_df, cfg.split)
 
     test_df = feat_df[feat_df["split"] == "test"]

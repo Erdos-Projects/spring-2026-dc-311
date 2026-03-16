@@ -37,9 +37,9 @@ def load_311(cfg: DictConfig) -> pd.DataFrame:
 
 def load_weather(cfg: DictConfig) -> pd.DataFrame:
     """
-    Load hourly weather from the cached CSV or Parquet file.
-    Returns a DataFrame with tz-aware UTC timestamps in the 'date' column
-    and columns: temperature_2m, precipitation, snowfall.
+    Load hourly weather from the stored CSV or Parquet file.
+    Returns a DataFrame with America/New_York tz-aware timestamps in the
+    'date' column and columns: temperature_2m, precipitation, snowfall.
     """
     path = Path(cfg.ward.weather_cache)
     if path.suffix == ".parquet":

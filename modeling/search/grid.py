@@ -27,12 +27,13 @@ from modeling.metrics import mae, poisson_deviance
 from modeling.split import make_split
 
 
-def _evaluate_one(master_df: pd.DataFrame, cfg_split, params: dict) -> dict:
+def _evaluate_one(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
+                  cfg_split, params: dict) -> dict:
     """Evaluate a single parameter combination. Returns params + val metrics."""
     from types import SimpleNamespace
 
     try:
-        feat_df = assemble_features(master_df, SimpleNamespace(**params))
+        feat_df = assemble_features(pothole_df, weather_df, SimpleNamespace(**params))
         feat_df = make_split(feat_df, cfg_split)
 
         feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
@@ -74,7 +75,7 @@ def run_grid(cfg: DictConfig) -> pd.DataFrame:
         print(f"[dry-run] Would run grid search for ward={cfg.ward.name}")
         return pd.DataFrame()
 
-    master_df = build_daily(cfg)
+    pothole_df, weather_df = build_daily(cfg)
     grid_cfg = cfg.search
     n_jobs = int(grid_cfg.get("n_jobs", -1))
 
@@ -85,7 +86,7 @@ def run_grid(cfg: DictConfig) -> pd.DataFrame:
     print(f"Grid search: {len(all_params):,} combinations, n_jobs={n_jobs}")
 
     results = Parallel(n_jobs=n_jobs, verbose=5)(
-        delayed(_evaluate_one)(master_df, cfg.split, params)
+        delayed(_evaluate_one)(pothole_df, weather_df, cfg.split, params)
         for params in all_params
     )
 

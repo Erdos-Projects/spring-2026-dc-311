@@ -8,27 +8,26 @@ ward:
   weather_cache: weather_cache/weather_ward3_2023.csv
 
 features:
-  d: 7
-  d_p: 14
-  l_p: 5
-  d_s: 14
-  l_s: 0
-  d_f: 14
-  l_f: 7
-  k_AR: 10
+  d: 5     # forecast horizon (days)
+  d_p: 14  # precipitation rolling window
+  l_p: 5   # precipitation lag
+  d_s: 14  # snowfall rolling window
+  l_s: 5   # snowfall lag
+  d_f: 14  # freeze-thaw rolling window
+  l_f: 5   # freeze-thaw lag
+  k_AR: 0  # autoregressive lags (0 = non-autoregressive)
 
 model:
-  _target_: modeling.models.gbm.LGBMModel
-  n_estimators: 300
-  learning_rate: 0.05
-  num_leaves: 31
-  objective: poisson
+  _target_: modeling.models.glm.NegBinGLM
+  alpha: 1.0
 
 split:
   random_state: 42
   train_frac: 0.70
   val_frac: 0.15
   test_frac: 0.15
+
+load_model: null
 
 debug:
   verbose: false

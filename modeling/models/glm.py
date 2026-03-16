@@ -25,14 +25,22 @@ class NegBinGLM:
         X_const = sm.add_constant(X.astype(float), has_constant="add")
         y_arr = y.astype(float).values
 
-        try:
-            model = sm.NegativeBinomial(y_arr, X_const)
-            self._result = model.fit(disp=0, method="nm", maxiter=2000)
-        except Exception:
-            # Fallback: Poisson GLM
-            model = sm.GLM(y_arr, X_const, family=sm.families.Poisson())
-            self._result = model.fit()
+        # Try BFGS first (gradient-based, reliable for GLMs), then Nelder-Mead,
+        # then fall back to Poisson if both NegBin attempts fail to converge.
+        nb_model = sm.NegativeBinomial(y_arr, X_const)
+        for method in ("bfgs", "nm"):
+            try:
+                result = nb_model.fit(disp=0, method=method, maxiter=2000)
+                if result.mle_retvals.get("converged", True):
+                    self._result = result
+                    return self
+            except Exception:
+                continue
 
+        # Last resort: Poisson GLM (always converges via IRLS)
+        self._result = sm.GLM(
+            y_arr, X_const, family=sm.families.Poisson()
+        ).fit(disp=0)
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:

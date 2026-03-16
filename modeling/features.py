@@ -1,5 +1,9 @@
 """
-Assemble the full feature matrix from the master daily series.
+Assemble the feature matrix from the pothole and weather daily series.
+
+Weather rolling features are computed on the full-range weather_df (which
+includes a pre-analysis buffer) before being joined to the pothole spine.
+This ensures early-January rows get valid lookback features.
 
 All operations are vectorised pandas rolling/shift calls — no row-by-row
 loops, no I/O.  This function is called thousands of times during the
@@ -18,14 +22,22 @@ def _coerce(cfg_features):
     return cfg_features
 
 
-def assemble_features(master_df: pd.DataFrame, cfg_features) -> pd.DataFrame:
+def assemble_features(
+    pothole_df: pd.DataFrame,
+    weather_df: pd.DataFrame,
+    cfg_features,
+) -> pd.DataFrame:
     """
     Build the feature matrix for one parameter configuration.
 
     Parameters
     ----------
-    master_df : pd.DataFrame
-        Output of build_daily() — one row per calendar day.
+    pothole_df : pd.DataFrame
+        Analysis-window pothole counts — columns: date, pothole_count.
+    weather_df : pd.DataFrame
+        Full-range daily weather (includes pre-analysis buffer) — columns:
+        date, daily_precip, daily_snow, daily_ftc, sin_doy, cos_doy,
+        is_weekend, dow_Mon … dow_Sat.
     cfg_features : DictConfig | dict | SimpleNamespace
         Feature parameters: d, d_p, l_p, d_s, l_s, d_f, l_f, k_AR.
 
@@ -47,22 +59,26 @@ def assemble_features(master_df: pd.DataFrame, cfg_features) -> pd.DataFrame:
     l_f  = int(p.l_f)
     k_AR = int(p.k_AR)
 
-    df = master_df.copy()
+    # ── Weather rolling features (computed on full range for Dec context) ─────
+    w = weather_df.copy()
+    w["precip_roll"] = w["daily_precip"].rolling(d_p).sum().shift(l_p)
+    w["snow_roll"]   = w["daily_snow"].rolling(d_s).sum().shift(l_s)
+    w["ftc_roll"]    = w["daily_ftc"].rolling(d_f).sum().shift(l_f)
+    w = w.drop(columns=["daily_precip", "daily_snow", "daily_ftc"])
+
+    # Filter to analysis window and merge onto pothole spine
+    analysis_start = pothole_df["date"].min()
+    w = w[w["date"] >= analysis_start]
+    df = pothole_df.merge(w, on="date", how="left")
 
     # ── Target ────────────────────────────────────────────────────────────────
     # Y_t = sum(P_{t+1}, …, P_{t+d})
     df["Y"] = df["pothole_count"].rolling(d).sum().shift(-d)
 
-    # ── Weather features ──────────────────────────────────────────────────────
-    df["precip_roll"] = df["daily_precip"].rolling(d_p).sum().shift(l_p)
-    df["snow_roll"]   = df["daily_snow"].rolling(d_s).sum().shift(l_s)
-    df["ftc_roll"]    = df["daily_ftc"].rolling(d_f).sum().shift(l_f)
-
     # ── Autoregressive lags ───────────────────────────────────────────────────
     for k in range(1, k_AR + 1):
         df[f"pothole_lag{k}"] = df["pothole_count"].shift(k)
 
-    # ── Drop raw source columns (keep only engineered features + date/Y) ──────
-    df = df.drop(columns=["pothole_count", "daily_precip", "daily_snow", "daily_ftc"])
+    df = df.drop(columns=["pothole_count"])
 
     return df.dropna().reset_index(drop=True)

@@ -1,16 +1,16 @@
 """
-Build the daily series for a ward.
+Build the daily pothole and weather series for a ward.
 
-Columns produced:
-    date            – calendar day (date object)
-    pothole_count   – daily DC 311 pothole requests (zero-filled)
-    daily_precip    – daily total precipitation (mm)
-    daily_snow      – daily total snowfall (cm)
-    daily_ftc       – qualifying freeze-thaw cycles completing on this day
-    sin_doy         – sin(2π * day_of_year / 365)
-    cos_doy         – cos(2π * day_of_year / 365)
-    is_weekend      – 1 if Saturday or Sunday
-    dow_Mon … dow_Sat – one-hot day-of-week dummies (Sunday = reference, dropped)
+Returns a tuple (pothole_df, weather_df):
+
+    pothole_df  – date, pothole_count
+                  Analysis window only (2023-01-01 → 2023-12-31).
+
+    weather_df  – date, daily_precip, daily_snow, daily_ftc,
+                  sin_doy, cos_doy, is_weekend, dow_Mon … dow_Sat.
+                  Covers the full hourly-data range (including the
+                  pre-analysis buffer) so that rolling lookback features
+                  in features.py have full context for early January.
 
 Usage:
     python -m modeling.data.master                    # default (ward3)
@@ -19,18 +19,14 @@ Usage:
 """
 
 import math
-import sys
 
 import hydra
 import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
 
-# Allow importing weather_fetch from the repo root
-sys.path.insert(0, str(Path(__file__).parents[2]))
-from weather_fetch import aggregate_to_daily  # noqa: E402
-
-from modeling.data.load import load_311, load_weather  # noqa: E402
+from modeling.data.weather_fetch import aggregate_to_daily
+from modeling.data.load import load_311, load_weather
 
 
 # ---------------------------------------------------------------------------
@@ -99,54 +95,58 @@ def compute_daily_ftc(df_hourly: pd.DataFrame, min_hours: int = 4,
 # Daily series builder
 # ---------------------------------------------------------------------------
 
-def build_daily(cfg: DictConfig) -> pd.DataFrame:
+def build_daily(cfg: DictConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
-    Build and return the daily series for the configured ward.
+    Build and return (pothole_df, weather_df) for the configured ward.
+
+    pothole_df covers the analysis window only (set by load_311).
+    weather_df covers the full hourly-data range so that rolling windows
+    in assemble_features have Dec-buffer context for early-January rows.
     """
     if cfg.debug.verbose:
         print(f"[build_daily] Loading 311 data for {cfg.ward.ward_label} …")
 
-    daily_counts = load_311(cfg)
+    pothole_df = load_311(cfg)
     df_hourly = load_weather(cfg)
 
     if cfg.debug.verbose:
         print(f"[build_daily] Hourly rows: {len(df_hourly):,}  "
               f"({df_hourly['date'].min()} → {df_hourly['date'].max()})")
 
-    # Daily weather aggregation
-    df_daily = aggregate_to_daily(df_hourly)  # date (date obj), precip_mm, snow_cm, …
+    # Daily weather aggregation (full range including buffer)
+    df_daily = aggregate_to_daily(df_hourly)
 
-    # Daily FTC (computed once from the full hourly series)
+    # FTC (computed once from the full hourly series)
     if cfg.debug.verbose:
         print("[build_daily] Computing daily freeze-thaw cycles …")
     daily_ftc_dict = compute_daily_ftc(df_hourly)
 
-    # Merge pothole counts + weather
-    df = daily_counts.merge(
-        df_daily[["date", "precip_mm", "snow_cm"]], on="date", how="left"
-    ).rename(columns={"precip_mm": "daily_precip", "snow_cm": "daily_snow"})
+    # Build weather_df — full date range, no pothole data
+    weather_df = df_daily[["date", "precip_mm", "snow_cm"]].rename(
+        columns={"precip_mm": "daily_precip", "snow_cm": "daily_snow"}
+    ).copy()
+    weather_df["daily_ftc"] = weather_df["date"].map(lambda d: daily_ftc_dict.get(d, 0))
 
-    df["daily_ftc"] = df["date"].map(lambda d: daily_ftc_dict.get(d, 0))
-
-    # Calendar features
-    date_dt = pd.to_datetime(df["date"])
+    # Calendar features on full range
+    date_dt = pd.to_datetime(weather_df["date"])
     doy = date_dt.dt.dayofyear
     dow = date_dt.dt.dayofweek
 
-    df["sin_doy"] = (2 * math.pi * doy / 365).apply(math.sin)
-    df["cos_doy"] = (2 * math.pi * doy / 365).apply(math.cos)
-    df["is_weekend"] = (dow >= 5).astype(int)
+    weather_df["sin_doy"]   = np.sin(2 * math.pi * doy / 365)
+    weather_df["cos_doy"]   = np.cos(2 * math.pi * doy / 365)
+    weather_df["is_weekend"] = (dow >= 5).astype(int)
 
     for i, name in enumerate(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]):
-        df[f"dow_{name}"] = (dow == i).astype(int)
+        weather_df[f"dow_{name}"] = (dow == i).astype(int)
 
     if cfg.debug.verbose:
-        print(f"[build_daily] shape={df.shape}")
-        print(f"  Date range  : {df['date'].min()} → {df['date'].max()}")
-        print(f"  FTC>0 days  : {(df['daily_ftc'] > 0).sum()}")
-        print(df.head(3))
+        print(f"[build_daily] pothole_df : {len(pothole_df)} rows  "
+              f"({pothole_df['date'].min()} → {pothole_df['date'].max()})")
+        print(f"[build_daily] weather_df : {len(weather_df)} rows  "
+              f"({weather_df['date'].min()} → {weather_df['date'].max()})")
+        print(f"  FTC>0 days  : {(weather_df['daily_ftc'] > 0).sum()}")
 
-    return df
+    return pothole_df, weather_df
 
 
 # ---------------------------------------------------------------------------
@@ -158,8 +158,11 @@ def main(cfg: DictConfig) -> None:
     if cfg.debug.dry_run:
         print(f"[dry-run] Would build daily series for ward={cfg.ward.name}")
         return
-    df = build_daily(cfg)
-    print(f"Daily series built: {len(df)} rows, {len(df.columns)} columns")
+    pothole_df, weather_df = build_daily(cfg)
+    print(f"Pothole series : {len(pothole_df)} rows  "
+          f"({pothole_df['date'].min()} → {pothole_df['date'].max()})")
+    print(f"Weather series : {len(weather_df)} rows  "
+          f"({weather_df['date'].min()} → {weather_df['date'].max()})")
 
 
 if __name__ == "__main__":

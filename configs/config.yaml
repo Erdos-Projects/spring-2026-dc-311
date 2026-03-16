@@ -1,9 +1,10 @@
 defaults:
   - ward: ward3
   - features: default
-  - model: lgbm
+  - model: glm
   - split: default
   - debug: default
   - _self_
 
 root: .
+load_model: null

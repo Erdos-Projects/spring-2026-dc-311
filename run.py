@@ -92,16 +92,21 @@ def _inspect_master(overrides: list[str]) -> None:
     cfg = _load_cfg(overrides)
     from modeling.data.master import build_daily
 
-    df = build_daily(cfg)
-    print(f"\n=== Daily Series: {cfg.ward.name} ===")
-    print(f"Shape      : {df.shape}")
-    print(f"Columns    : {list(df.columns)}")
-    print(f"Date range : {df['date'].min()} → {df['date'].max()}")
-    nulls = df.isnull().sum()
+    pothole_df, weather_df = build_daily(cfg)
+
+    print(f"\n=== Pothole Series: {cfg.ward.name} ===")
+    print(f"Shape      : {pothole_df.shape}")
+    print(f"Date range : {pothole_df['date'].min()} → {pothole_df['date'].max()}")
+    print(f"\n{pothole_df['pothole_count'].describe().round(3)}")
+
+    print(f"\n=== Weather Series: {cfg.ward.name} ===")
+    print(f"Shape      : {weather_df.shape}")
+    print(f"Date range : {weather_df['date'].min()} → {weather_df['date'].max()}")
+    nulls = weather_df.isnull().sum()
     if nulls.any():
         print(f"Null counts:\n{nulls[nulls > 0]}")
-    cols = [c for c in ["pothole_count", "daily_precip", "daily_snow", "daily_ftc"] if c in df.columns]
-    print(f"\nDescriptive stats:\n{df[cols].describe().round(3)}")
+    cols = [c for c in ["daily_precip", "daily_snow", "daily_ftc"] if c in weather_df.columns]
+    print(f"\nDescriptive stats:\n{weather_df[cols].describe().round(3)}")
 
 
 def _inspect_features(overrides: list[str]) -> None:
@@ -109,8 +114,8 @@ def _inspect_features(overrides: list[str]) -> None:
     from modeling.data.master import build_daily
     from modeling.features import assemble_features
 
-    master_df = build_daily(cfg)
-    feat_df = assemble_features(master_df, cfg.features)
+    pothole_df, weather_df = build_daily(cfg)
+    feat_df = assemble_features(pothole_df, weather_df, cfg.features)
 
     feature_cols = [c for c in feat_df.columns if c not in ("date", "Y")]
     print(f"\n=== Feature Matrix: {cfg.ward.name} ===")
@@ -129,8 +134,8 @@ def _inspect_split(overrides: list[str]) -> None:
     from modeling.features import assemble_features
     from modeling.split import make_split
 
-    master_df = build_daily(cfg)
-    feat_df = assemble_features(master_df, cfg.features)
+    pothole_df, weather_df = build_daily(cfg)
+    feat_df = assemble_features(pothole_df, weather_df, cfg.features)
     feat_df = make_split(feat_df, cfg.split)
     feat_df["quarter"] = pd.to_datetime(feat_df["date"]).dt.quarter
 
