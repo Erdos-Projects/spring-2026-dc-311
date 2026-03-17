@@ -1,0 +1,29 @@
+ward:
+  name: ward3
+  ward_label: Ward 3
+  raw_311:
+  - ${root}/data/311_data/ward3_potholes_2023.parquet
+  weather_cache: ${root}/data/weather_cache/weather_ward3_20221201_20231231.parquet
+features:
+  d: 5
+  d_p: 14
+  l_p: 5
+  d_s: 14
+  l_s: 5
+  d_f: 14
+  l_f: 5
+  k_AR: 0
+model:
+  _target_: modeling.models.glm.NegBinGLM
+  alpha: 1.0
+split:
+  random_state: 42
+  train_frac: 0.7
+  val_frac: 0.15
+  test_frac: 0.15
+debug:
+  verbose: false
+  dry_run: false
+  inspect: null
+root: .
+load_model: null
