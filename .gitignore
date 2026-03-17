@@ -11,3 +11,7 @@
 # *.txt
 
 # all log files
+
+# hydra outputs and logs 
+outputs/*
+multirun/*
