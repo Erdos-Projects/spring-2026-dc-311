@@ -1,34 +1,43 @@
 from pathlib import Path
 
 import pandas as pd
-from omegaconf import DictConfig
+from omegaconf import DictConfig, ListConfig
 
 
 def load_311(cfg: DictConfig) -> pd.DataFrame:
     """
-    Load DC 311 data and return a zero-filled daily pothole count series
-    for the configured ward, covering 2023-01-01 to 2023-12-31.
+    Load pre-filtered per-ward pothole parquet files and return a
+    zero-filled daily pothole count series.
+
+    ``cfg.ward.raw_311`` may be a single path string or a YAML list of
+    paths (for multi-year data).  All files are concatenated before
+    counting.
+
+    Each parquet file is expected to have been produced by
+    data/preprocess_311.py and contains at minimum an ``ADDDATE`` column.
     """
-    raw_path = Path(cfg.ward.raw_311)
-    df = pd.read_csv(raw_path, low_memory=False)
+    raw = cfg.ward.raw_311
+    paths = list(raw) if isinstance(raw, (list, ListConfig)) else [raw]
+
+    frames = [pd.read_parquet(p) for p in paths]
+    df = pd.concat(frames, ignore_index=True)
+
     df["ADDDATE"] = pd.to_datetime(df["ADDDATE"], errors="coerce")
     df["date"] = df["ADDDATE"].dt.date
 
-    mask = (df["WARD"] == cfg.ward.ward_label) & (
-        df["SERVICECODEDESCRIPTION"] == "Pothole"
-    )
-    df_potholes = df.loc[mask].copy()
-
     raw_counts = (
-        df_potholes.groupby("date")
+        df.groupby("date")
         .size()
         .rename("pothole_count")
         .reset_index()
     )
     raw_counts["date"] = pd.to_datetime(raw_counts["date"]).dt.date
 
+    # Zero-fill the full calendar range covered by the loaded data
+    min_date = pd.Timestamp(raw_counts["date"].min())
+    max_date = pd.Timestamp(raw_counts["date"].max())
     full_calendar = pd.DataFrame(
-        {"date": [d.date() for d in pd.date_range("2023-01-01", "2023-12-31", freq="D")]}
+        {"date": [d.date() for d in pd.date_range(min_date, max_date, freq="D")]}
     )
     daily_counts = full_calendar.merge(raw_counts, on="date", how="left").fillna(0)
     daily_counts["pothole_count"] = daily_counts["pothole_count"].astype(int)
@@ -37,21 +46,9 @@ def load_311(cfg: DictConfig) -> pd.DataFrame:
 
 def load_weather(cfg: DictConfig) -> pd.DataFrame:
     """
-    Load hourly weather from the stored CSV or Parquet file.
+    Load hourly weather from the pre-fetched parquet file.
+
     Returns a DataFrame with America/New_York tz-aware timestamps in the
     'date' column and columns: temperature_2m, precipitation, snowfall.
     """
-    path = Path(cfg.ward.weather_cache)
-    if path.suffix == ".parquet":
-        df = pd.read_parquet(path)
-    else:
-        df = pd.read_csv(path)
-        df["date"] = pd.to_datetime(df["date"])
-
-    # # Ensure tz-aware UTC
-    # if df["date"].dt.tz is None:
-    #     df["date"] = df["date"].dt.tz_localize("UTC")
-    # else:
-    #     df["date"] = df["date"].dt.tz_convert("UTC")
-
-    return df
+    return pd.read_parquet(Path(cfg.ward.weather_cache))

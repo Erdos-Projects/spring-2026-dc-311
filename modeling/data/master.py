@@ -25,7 +25,6 @@ import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
 
-from modeling.data.weather_fetch import aggregate_to_daily
 from modeling.data.load import load_311, load_weather
 
 
@@ -92,6 +91,27 @@ def compute_daily_ftc(df_hourly: pd.DataFrame, min_hours: int = 4,
 
 
 # ---------------------------------------------------------------------------
+# Daily weather aggregation
+# ---------------------------------------------------------------------------
+
+def _aggregate_to_daily(df_hourly: pd.DataFrame) -> pd.DataFrame:
+    """Resample hourly weather to daily summaries."""
+    daily = (
+        df_hourly.resample("D", on="date")
+        .agg(
+            tmax_c=("temperature_2m", "max"),
+            tmin_c=("temperature_2m", "min"),
+            tmean_c=("temperature_2m", "mean"),
+            precip_mm=("precipitation", "sum"),
+            snow_cm=("snowfall", "sum"),
+        )
+        .reset_index()
+    )
+    daily["date"] = daily["date"].dt.date
+    return daily
+
+
+# ---------------------------------------------------------------------------
 # Daily series builder
 # ---------------------------------------------------------------------------
 
@@ -114,7 +134,7 @@ def build_daily(cfg: DictConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
               f"({df_hourly['date'].min()} → {df_hourly['date'].max()})")
 
     # Daily weather aggregation (full range including buffer)
-    df_daily = aggregate_to_daily(df_hourly)
+    df_daily = _aggregate_to_daily(df_hourly)
 
     # FTC (computed once from the full hourly series)
     if cfg.debug.verbose:

@@ -27,7 +27,7 @@ from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.split import make_split
-
+import time as t
 
 def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
     """
@@ -63,53 +63,18 @@ def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
     return model_path, run_cfg
 
 
-def evaluate(cfg: DictConfig) -> dict:
+def plot_diagnostics(
+    test_df: pd.DataFrame,
+    y_test: np.ndarray,
+    preds: np.ndarray,
+    model,
+    run_cfg: DictConfig,
+    run_dir: Path,
+) -> Path:
     """
-    One-shot test-set evaluation.  Returns a metrics dict and saves:
-      - results/test_metrics_{ward}_{model}.json
-      - results/plots/residuals_{ward}_{model}.png
-      - results/plots/shap_{ward}_{model}.png  (tree models only)
+    Save a 2-panel diagnostic figure (residuals vs date, predicted vs actual)
+    to run_dir/residuals.png and return the saved path.
     """
-    model_path, run_cfg = _load_run(cfg)
-    with open(model_path, "rb") as f:
-        saved = pickle.load(f)
-    model = saved["model"]
-    feature_cols = saved["feature_cols"]
-    feat_params = SimpleNamespace(**saved["feat_params"])
-
-    pothole_df, weather_df = build_daily(run_cfg)
-    feat_df = assemble_features(pothole_df, weather_df, feat_params)
-    feat_df = make_split(feat_df, run_cfg.split)
-
-    test_df = feat_df[feat_df["split"] == "test"]
-    X_test = test_df[feature_cols]
-    y_test = test_df["Y"].values
-
-    preds = model.predict(X_test)
-
-    metrics = {
-        "test_mae":              float(mae(y_test, preds)),
-        "test_rmse":             float(rmse(y_test, preds)),
-        "test_poisson_deviance": float(poisson_deviance(y_test, preds)),
-    }
-
-    print("\n=== Test Set Evaluation ===")
-    for k, v in metrics.items():
-        print(f"  {k:30s}: {v:.4f}")
-
-    if cfg.debug.dry_run:
-        return metrics
-
-    # ── Save metrics ──────────────────────────────────────────────────────────
-    Path("results").mkdir(exist_ok=True)
-    metrics_path = Path("results") / f"test_metrics_{run_cfg.ward.name}_{model.name}.json"
-    with open(metrics_path, "w") as f:
-        json.dump(metrics, f, indent=2)
-
-    # ── Diagnostic plots ──────────────────────────────────────────────────────
-    plots_dir = Path("results") / "plots"
-    plots_dir.mkdir(exist_ok=True)
-
     dates = pd.to_datetime(test_df["date"])
     residuals = y_test - preds
 
@@ -130,34 +95,65 @@ def evaluate(cfg: DictConfig) -> dict:
     axes[1].set_title("Predicted vs Actual")
 
     plt.tight_layout()
-    fig.savefig(plots_dir / f"residuals_{run_cfg.ward.name}_{model.name}.png", dpi=150)
+    out_path = run_dir / "residuals.png"
+    fig.savefig(out_path, dpi=150)
     plt.close(fig)
+    return out_path
 
-    # ── SHAP (tree models) ────────────────────────────────────────────────────
-    if hasattr(model, "_model") and hasattr(model._model, "feature_importances_"):
-        try:
-            import shap
 
-            explainer = shap.TreeExplainer(model._model)
-            shap_vals = explainer.shap_values(X_test)
-            fig, _ = plt.subplots(figsize=(10, max(4, len(feature_cols) // 3)))
-            shap.summary_plot(shap_vals, X_test, show=False)
-            plt.tight_layout()
-            fig.savefig(
-                plots_dir / f"shap_{run_cfg.ward.name}_{model.name}.png",
-                dpi=150, bbox_inches="tight",
-            )
-            plt.close(fig)
-            print(f"SHAP plot saved → {plots_dir / f'shap_{run_cfg.ward.name}_{model.name}.png'}")
-        except Exception as exc:
-            print(f"SHAP plot skipped: {exc}")
-
-    if cfg.debug.verbose:
-        print(f"Plots saved → {plots_dir}")
-
-    if cfg.debug.inspect == "evaluate":
-        import IPython; IPython.embed(header="[inspect] evaluate() locals")  # noqa: E702
-
+def evaluate(cfg: DictConfig) -> dict:
+    """
+    One-shot test-set evaluation.  Returns a metrics dict and saves into
+    results/{stem}/:
+      - test_metrics.json
+      - residuals.png
+    """
+    model_path, run_cfg = _load_run(cfg)
+    breakpoint()
+    with open(model_path, "rb") as f:
+        saved = pickle.load(f)
+    model = saved["model"]
+    feature_cols = saved["feature_cols"]
+    feat_params = SimpleNamespace(**saved["feat_params"])
+    breakpoint()
+    tic = t.perf_counter()
+    pothole_df, weather_df = build_daily(run_cfg)
+    toc = t.perf_counter()
+    print(f"Time taken to build daily series: {toc - tic:.2f} seconds")
+    tic = t.perf_counter()
+    feat_df = assemble_features(pothole_df, weather_df, feat_params)
+    toc = t.perf_counter()
+    print(f"Time taken to assemble features: {toc - tic:.2f} seconds")
+    tic = t.perf_counter()
+    feat_df = make_split(feat_df, run_cfg.split)
+    breakpoint()
+    test_df = feat_df[feat_df["split"] == "test"]
+    X_test = test_df[feature_cols]
+    y_test = test_df["Y"].values
+    breakpoint()
+    preds = model.predict(X_test)
+    breakpoint()
+    metrics = {
+        "test_mae":              float(mae(y_test, preds)),
+        "test_rmse":             float(rmse(y_test, preds)),
+        "test_poisson_deviance": float(poisson_deviance(y_test, preds)),
+    }
+    breakpoint()
+    print("\n=== Test Set Evaluation ===")
+    for k, v in metrics.items():
+        print(f"  {k:30s}: {v:.4f}")
+    breakpoint()
+    if cfg.debug.dry_run:
+        return metrics
+    breakpoint()
+    # ── Save metrics and plots into the run directory ─────────────────────────
+    run_dir = Path("results") / cfg.load_model
+    metrics_path = run_dir / "test_metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=2)
+    breakpoint()
+    plot_diagnostics(test_df, y_test, preds, model, run_cfg, run_dir)
+    breakpoint()
     return metrics
 
 

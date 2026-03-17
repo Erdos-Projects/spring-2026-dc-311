@@ -1,0 +1,32 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+features:
+  d: 5
+  d_f: 14
+  d_p: 14
+  d_s: 14
+  k_AR: 0
+  l_f: 5
+  l_p: 5
+  l_s: 5
+load_model: null
+model:
+  _target_: modeling.models.glm.NegBinGLM
+  alpha: 1.0
+model_name: negbin_glm
+model_path: results/ward3_negbin_glm_20221130_20231231_20260317_e8485c20/model.pkl
+run_id: 20260317_e8485c20
+split:
+  random_state: 42
+  test_frac: 0.15
+  train_frac: 0.7
+  val_frac: 0.15
+ward:
+  name: ward3
+  raw_311:
+  - data/311_data/ward3_potholes_2023.parquet
+  ward_label: Ward 3
+  weather_cache: data/weather_cache/weather_ward3_20221201_20231231.parquet
+wx_range: '20221130_20231231'
