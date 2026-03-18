@@ -14,3 +14,7 @@
 
 # hydra outputs and logs 
 /outputs/
+
+# large merged parquet (local only)
+/All_Service_Requests_2021_2025_merged.parquet
+/*_merged.parquet
