@@ -8,6 +8,7 @@ and evaluates on the held-out test rows.
 Usage:
     python -m modeling.evaluate load_model=ward3_negbin_glm_20221201_20231231_20260316_da02efec
     python -m modeling.evaluate load_model=<stem> --config-name first_try
+    python -m modeling.evaluate load_model=<stem> wandb.enabled=false
 """
 
 import json
@@ -16,6 +17,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import yaml
+import wandb
 
 import hydra
 import matplotlib.pyplot as plt
@@ -28,6 +30,7 @@ from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.split import make_split
 import time as t
+
 
 def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
     """
@@ -77,7 +80,7 @@ def plot_diagnostics(
     """
     dates = pd.to_datetime(test_df["date"])
     residuals = y_test - preds
-
+    
     fig, axes = plt.subplots(1, 2, figsize=(13, 4))
 
     axes[0].scatter(dates, residuals, alpha=0.55, s=18)
@@ -116,15 +119,8 @@ def evaluate(cfg: DictConfig) -> dict:
     feature_cols = saved["feature_cols"]
     feat_params = SimpleNamespace(**saved["feat_params"])
     breakpoint()
-    tic = t.perf_counter()
     pothole_df, weather_df = build_daily(run_cfg)
-    toc = t.perf_counter()
-    print(f"Time taken to build daily series: {toc - tic:.2f} seconds")
-    tic = t.perf_counter()
     feat_df = assemble_features(pothole_df, weather_df, feat_params)
-    toc = t.perf_counter()
-    print(f"Time taken to assemble features: {toc - tic:.2f} seconds")
-    tic = t.perf_counter()
     feat_df = make_split(feat_df, run_cfg.split)
     breakpoint()
     test_df = feat_df[feat_df["split"] == "test"]
@@ -152,7 +148,24 @@ def evaluate(cfg: DictConfig) -> dict:
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     breakpoint()
-    plot_diagnostics(test_df, y_test, preds, model, run_cfg, run_dir)
+    plot_path = plot_diagnostics(test_df, y_test, preds, model, run_cfg, run_dir)
+    breakpoint()
+    # ── wandb logging ─────────────────────────────────────────────────────────
+    if cfg.wandb.enabled:
+        wandb_run_id = run_cfg.get("wandb_run_id", None)
+        wandb.init(
+            entity=cfg.wandb.entity,
+            project=cfg.wandb.project,
+            id=wandb_run_id,
+            resume="allow",
+        )
+        wandb.log({
+            "test/mae":              metrics["test_mae"],
+            "test/rmse":             metrics["test_rmse"],
+            "test/poisson_deviance": metrics["test_poisson_deviance"],
+        })
+        wandb.log({"test/residuals_plot": wandb.Image(str(plot_path))})
+        wandb.finish()
     breakpoint()
     return metrics
 

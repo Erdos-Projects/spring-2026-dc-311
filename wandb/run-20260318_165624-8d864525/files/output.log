@@ -1,0 +1,49 @@
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(173)train()
+-> pothole_df, weather_df = build_daily(cfg) # build the daily series
+Using best params from results/best_params_ward3.json
+[assemble_features] kept 1815/1826 rows (99.4%) after dropping NaNs
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(179)train()
+-> train_df = feat_df[feat_df["split"] == "train"] # get the train set
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(183)train()
+-> X_train = train_df[feature_cols] # get the features for the train set
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(186)train()
+-> if cfg.debug.verbose:
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(193)train()
+-> split_method = getattr(cfg.split, "method", "random")
+/Users/shashanksule/miniforge3/envs/erdos_ds_environment/lib/python3.12/site-packages/statsmodels/base/model.py:595: HessianInversionWarning: Inverting hessian failed, no bse or cov_params available
+  warnings.warn('Inverting hessian failed, no bse or cov_params '
+/Users/shashanksule/miniforge3/envs/erdos_ds_environment/lib/python3.12/site-packages/statsmodels/base/model.py:595: HessianInversionWarning: Inverting hessian failed, no bse or cov_params available
+  warnings.warn('Inverting hessian failed, no bse or cov_params '
+CV metrics: {'cv_mae': 1.257075690103253, 'cv_rmse': 1.7920872605610214, 'cv_poisson_deviance': 1.862997496487815, 'cv_mae_std': 0.21235981967634232, 'cv_rmse_std': 0.35143102150991795, 'cv_poisson_deviance_std': 0.3147634923601786}
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(204)train()
+-> if cfg.wandb.enabled:
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(206)train()
+-> fold_maes  = cv_metrics.pop("_fold_mae")
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(227)train()
+-> if cfg.debug.dry_run:
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(234)train()
+-> X_tv = train_val_df[feature_cols]
+/Users/shashanksule/miniforge3/envs/erdos_ds_environment/lib/python3.12/site-packages/statsmodels/base/model.py:595: HessianInversionWarning: Inverting hessian failed, no bse or cov_params available
+  warnings.warn('Inverting hessian failed, no bse or cov_params '
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(240)train()
+-> val_preds = model.predict(val_df[feature_cols]) # predict the val set
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(247)train()
+-> if cfg.wandb.enabled:
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(249)train()
+-> wandb.log({
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(256)train()
+-> wx_start = pd.to_datetime(weather_df["date"].min()).strftime("%Y%m%d")
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(260)train()
+-> metrics = {**cv_metrics, **val_metrics, "run_id": run_id, "wx_range": wx_range}
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(265)train()
+-> stem = f"{cfg.ward.name}_{model.name}_{wx_range}_{run_id}"
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(272)train()
+-> print(f"run_id      → {run_id}")
+run_id      → 20260318_8d864525
+wx_range    → 20200601_20251231
+Model saved → results/ward3_negbin_glm_20200601_20251231_20260318_8d864525/model.pkl
+Run config  → results/ward3_negbin_glm_20200601_20251231_20260318_8d864525/run.yaml
+Metrics     → results/ward3_negbin_glm_20200601_20251231_20260318_8d864525/train_metrics.json
+Final val MAE: 1.4586
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(279)train()
+-> if cfg.wandb.enabled:

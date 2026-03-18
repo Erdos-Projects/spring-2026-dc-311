@@ -1,0 +1,41 @@
+{
+  "os": "macOS-15.3.2-arm64-arm-64bit",
+  "python": "CPython 3.12.12",
+  "startedAt": "2026-03-18T20:46:46.617692Z",
+  "args": [
+    "++ward.raw_311=/data/311_data/ward3_potholes_20210101_20251231.parquet",
+    "ward.weather_cache=/data/weather_cache/weather_ward3_20200601_20251231.parquet"
+  ],
+  "program": "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py",
+  "codePath": "modeling/train.py",
+  "codePathLocal": "modeling/train.py",
+  "git": {
+    "remote": "https://github.com/Erdos-Projects/spring-2026-dc-311.git",
+    "commit": "c9b03d0362ff38d439f57bb3ec0431c4dc705c0e"
+  },
+  "email": "ssule25@umd.edu",
+  "root": "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311",
+  "host": "MacBook-Pro-208.local",
+  "executable": "/Users/shashanksule/miniforge3/envs/erdos_ds_environment/bin/python3",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "242981675008"
+    }
+  },
+  "memory": {
+    "total": "8589934592"
+  },
+  "apple": {
+    "name": "Apple M1",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 8,
+    "swapTotalBytes": "10737418240",
+    "ramTotalBytes": "8589934592"
+  },
+  "writerId": "q0nialma0j5zhdvw3038hkpdkqer529m"
+}

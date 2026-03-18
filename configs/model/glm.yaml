@@ -1,2 +1,3 @@
 _target_: modeling.models.glm.NegBinGLM
+name: negbin_glm
 alpha: 1.0

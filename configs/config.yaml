@@ -4,6 +4,7 @@ defaults:
   - model: glm
   - split: default
   - debug: default
+  - wandb: default
   - _self_
 
 root: .

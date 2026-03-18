@@ -1,97 +1,110 @@
 """
-One-time preprocessing script for raw DC 311 service-request CSVs.
+One-time preprocessing for raw DC 311 service-request CSVs.
 
-Reads the raw annual 311 CSV (one file per year, all wards and service
-types), filters to Pothole requests, and writes one parquet file per ward
-into the data/ directory.
+Reads 311 CSV(s), filters to Pothole requests, and writes one parquet file
+per ward.  Returns the over-year combined centroids (mean lat/lon) per ward.
 
-Output naming convention:
-    data/{ward_slug}_potholes_{year}.parquet
-    e.g. data/ward3_potholes_2023.parquet
+Output naming uses the date range from the data:
+    data/{ward_slug}_potholes_{min_date}_{max_date}.parquet
 
-The year is extracted from the raw CSV filename.  The expected filename
-pattern is:  All_Service_Requests_-_{year}.csv
-
-Usage (from repo root):
-    python data/preprocess_311.py
-    python data/preprocess_311.py --csv All_Service_Requests_-_2022.csv
-    python data/preprocess_311.py --csv All_Service_Requests_-_2023.csv --out data/311_data
+Required CSV columns: ADDDATE, WARD, SERVICECODEDESCRIPTION, LATITUDE, LONGITUDE.
 """
 
-import argparse
-import re
 from pathlib import Path
 
 import pandas as pd
 
+REQUIRED_COLS = ["ADDDATE", "WARD", "SERVICECODEDESCRIPTION", "LATITUDE", "LONGITUDE"]
+
 
 def preprocess_311(
-    raw_csv: str | Path,
+    raw_csv: str | Path | list[str | Path],
     out_dir: str | Path = "data/311_data",
-) -> dict[str, Path]:
+) -> dict[str, tuple[Path, float, float]]:
     """
-    Filter a raw 311 CSV to Pothole rows, split by ward, and write
-    per-ward parquet files.
+    Filter 311 CSV(s) to Pothole rows, split by ward, write per-ward parquet
+    files, and return the over-year combined centroids (mean lat/lon) per ward.
 
     Parameters
     ----------
-    raw_csv : str or Path
-        Path to the raw annual 311 CSV, e.g.
-        ``"All_Service_Requests_-_2023.csv"``.
-        The year is extracted from the filename using the pattern
-        ``All_Service_Requests_-_{year}.csv``.
+    raw_csv : str, Path, or list of str/Path
+        Path(s) to raw 311 CSV(s).
     out_dir : str or Path
         Directory to write parquet files into (created if needed).
 
     Returns
     -------
-    dict mapping ward slug → Path of the written parquet file.
+    dict mapping ward slug → (parquet_path, lat, lon).
     """
-    raw_csv = Path(raw_csv)
+    paths = [raw_csv] if isinstance(raw_csv, (str, Path)) else list(raw_csv)
+    paths = [Path(p) for p in paths]
+
+    if not paths:
+        raise ValueError("At least one CSV path is required.")
+
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Extract year from filename
-    match = re.search(r"(\d{4})", raw_csv.stem)
-    if not match:
+    frames = []
+    for p in paths:
+        print(f"Reading {p} …")
+        try:
+            df = pd.read_csv(p, usecols=REQUIRED_COLS, low_memory=False)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Preprocessing failed: CSV file not found: {p}. "
+                "Check that the path is correct and the file exists."
+            ) from e
+        except (ValueError, KeyError) as e:
+            try:
+                available = pd.read_csv(p, nrows=0).columns.tolist()
+            except Exception:
+                available = []
+            missing = [c for c in REQUIRED_COLS if c not in available]
+            raise ValueError(
+                f"Preprocessing failed for {p.name}: missing required columns {missing}. "
+                f"Required: {REQUIRED_COLS}. Available in CSV: {available}. "
+                "Ensure the CSV contains ADDDATE, WARD, SERVICECODEDESCRIPTION, LATITUDE, LONGITUDE."
+            ) from e
+        df = df[df["SERVICECODEDESCRIPTION"] == "Pothole"].copy()
+        df = df.dropna(subset=["WARD", "LATITUDE", "LONGITUDE"])
+        df["LATITUDE"] = pd.to_numeric(df["LATITUDE"], errors="coerce")
+        df["LONGITUDE"] = pd.to_numeric(df["LONGITUDE"], errors="coerce")
+        df = df.dropna(subset=["LATITUDE", "LONGITUDE"])
+        frames.append(df)
+
+    df = pd.concat(frames, ignore_index=True)
+    if df.empty:
         raise ValueError(
-            f"Cannot extract year from filename '{raw_csv.name}'. "
-            "Expected a filename containing a 4-digit year, "
-            "e.g. 'All_Service_Requests_-_2023.csv'."
+            "Preprocessing failed: no Pothole rows with valid WARD, LATITUDE, LONGITUDE. "
+            "Ensure the CSVs contain Pothole requests (SERVICECODEDESCRIPTION='Pothole') "
+            "and that LATITUDE/LONGITUDE are present and numeric."
         )
-    year = match.group(1)
+    print(f"  Combined: {len(df):,} Pothole rows across wards: {sorted(df['WARD'].dropna().unique())}")
 
-    print(f"Reading {raw_csv}  (year={year}) …")
-    df = pd.read_csv(
-        raw_csv,
-        usecols=["ADDDATE", "WARD", "SERVICECODEDESCRIPTION"],
-        low_memory=False,
-    )
-    df = df[df["SERVICECODEDESCRIPTION"] == "Pothole"].copy()
-    print(f"  Pothole rows: {len(df):,}  across wards: {sorted(df['WARD'].dropna().unique())}")
+    df["ADDDATE"] = pd.to_datetime(df["ADDDATE"], errors="coerce")
+    df = df.dropna(subset=["ADDDATE"])
+    if df.empty:
+        raise ValueError(
+            "Preprocessing failed: no rows with valid ADDDATE. "
+            "Ensure ADDDATE is parseable as datetime (e.g. YYYY-MM-DD or ISO format)."
+        )
+    min_date = df["ADDDATE"].min().date()
+    max_date = df["ADDDATE"].max().date()
+    date_suffix = f"{min_date:%Y%m%d}_{max_date:%Y%m%d}"
 
-    written: dict[str, Path] = {}
+    result: dict[str, tuple[Path, float, float]] = {}
+
     for ward_label, group in df.groupby("WARD"):
         slug = ward_label.lower().replace(" ", "")
-        out_path = out_dir / f"{slug}_potholes_{year}.parquet"
-        group.reset_index(drop=True).to_parquet(out_path, index=False)
-        print(f"  Wrote {out_path}  ({len(group):,} rows)")
-        written[slug] = out_path
+        lat = float(group["LATITUDE"].mean())
+        lon = float(group["LONGITUDE"].mean())
 
-    return written
+        out_path = out_dir / f"{slug}_potholes_{date_suffix}.parquet"
+        group[["ADDDATE", "WARD", "SERVICECODEDESCRIPTION"]].reset_index(drop=True).to_parquet(
+            out_path, index=False
+        )
+        print(f"  Wrote {out_path}  ({len(group):,} rows)  centroid=({lat:.6f}, {lon:.6f})")
+        result[slug] = (out_path, lat, lon)
 
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Pre-filter 311 CSV to per-ward pothole parquets.")
-    parser.add_argument(
-        "--csv",
-        default="All_Service_Requests_-_2023.csv",
-        help="Path to the raw 311 CSV (default: All_Service_Requests_-_2023.csv)",
-    )
-    parser.add_argument(
-        "--out",
-        default="data/311_data",
-        help="Output directory for parquet files (default: data/311_data/)",
-    )
-    args = parser.parse_args()
-    preprocess_311(args.csv, args.out)
+    return result

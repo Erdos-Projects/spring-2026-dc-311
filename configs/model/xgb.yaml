@@ -1,4 +1,5 @@
 _target_: modeling.models.gbm.XGBModel
+name: xgb
 n_estimators: 300
 learning_rate: 0.05
 max_depth: 6

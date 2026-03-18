@@ -20,6 +20,7 @@ features:
 
 model:
   _target_: modeling.models.glm.NegBinGLM
+  name: negbin_glm
   alpha: 1.0
 
 split:
@@ -34,3 +35,8 @@ debug:
   verbose: false
   dry_run: false
   inspect: null
+
+wandb:
+  enabled: true
+  entity: "ssule25-university-of-maryland"
+  project: "DC-311-Pothole-Prediction"

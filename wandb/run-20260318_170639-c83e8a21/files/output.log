@@ -1,0 +1,30 @@
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(173)train()
+-> pothole_df, weather_df = build_daily(cfg) # build the daily series
+Using best params from results/best_params_ward3.json
+[assemble_features] kept 1815/1826 rows (99.4%) after dropping NaNs
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(179)train()
+-> train_df = feat_df[feat_df["split"] == "train"] # get the train set
+*** NameError: name 'train_df' is not defined
+> /Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py(183)train()
+-> X_train = train_df[feature_cols] # get the features for the train set
+Index(['date', 'sin_doy', 'cos_doy', 'is_weekend', 'dow_Mon', 'dow_Tue',
+       'dow_Wed', 'dow_Thu', 'dow_Fri', 'dow_Sat', 'precip_roll', 'snow_roll',
+       'ftc_roll', 'Y', 'pothole_lag1', 'pothole_lag2', 'pothole_lag3',
+       'pothole_lag4', 'pothole_lag5', 'pothole_lag6', 'pothole_lag7',
+       'pothole_lag8', 'pothole_lag9', 'pothole_lag10', 'split'],
+      dtype='str')
+Error executing job with overrides: ['split=temporal', 'ward=ward3_2021_2025', 'features.k_AR=0']
+Traceback (most recent call last):
+  File "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py", line 290, in main
+  File "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/train.py", line 183, in train
+    breakpoint()
+              ^^^
+  File "/Users/shashanksule/miniforge3/envs/erdos_ds_environment/lib/python3.12/bdb.py", line 100, in trace_dispatch
+    return self.dispatch_line(frame)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/shashanksule/miniforge3/envs/erdos_ds_environment/lib/python3.12/bdb.py", line 125, in dispatch_line
+    if self.quitting: raise BdbQuit
+                      ^^^^^^^^^^^^^
+bdb.BdbQuit
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.

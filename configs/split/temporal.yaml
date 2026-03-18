@@ -1,0 +1,3 @@
+method: temporal
+val_frac: 0.15
+test_frac: 0.15

@@ -81,4 +81,6 @@ def assemble_features(
 
     df = df.drop(columns=["pothole_count"])
 
-    return df.dropna().reset_index(drop=True)
+    df_clean = df.dropna().reset_index(drop=True)
+    print(f"[assemble_features] kept {len(df_clean)}/{len(df)} rows ({len(df_clean)/len(df):.1%}) after dropping NaNs")
+    return df_clean

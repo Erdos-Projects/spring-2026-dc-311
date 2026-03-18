@@ -1,0 +1,22 @@
+{"time":"2026-03-18T16:46:47.062131-04:00","level":"INFO","msg":"wandb-core"}
+{"time":"2026-03-18T16:46:47.06922-04:00","level":"INFO","msg":"stream: starting","core version":"0.25.1"}
+{"time":"2026-03-18T16:46:47.450132-04:00","level":"INFO","msg":"stream: created new stream","id":"97c177d8"}
+{"time":"2026-03-18T16:46:47.450384-04:00","level":"INFO","msg":"stream: started"}
+{"time":"2026-03-18T16:46:47.450386-04:00","level":"INFO","msg":"writer: started","stream_id":"97c177d8"}
+{"time":"2026-03-18T16:46:47.450464-04:00","level":"INFO","msg":"handler: started"}
+{"time":"2026-03-18T16:46:47.450609-04:00","level":"INFO","msg":"sender: started"}
+{"time":"2026-03-18T16:46:48.295733-04:00","level":"INFO","msg":"filestream: sending request","total_files":1,"console_offset":0,"console_lines":1}
+{"time":"2026-03-18T16:46:49.546848-04:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-03-18T16:47:03.311147-04:00","level":"INFO","msg":"filestream: sending request","total_files":2,"events_offset":0,"events_lines":2,"console_offset":0,"console_lines":3,"uploaded_len":2}
+{"time":"2026-03-18T16:47:03.563654-04:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-03-18T16:47:18.296023-04:00","level":"INFO","msg":"filestream: sending request","total_files":1,"events_offset":2,"events_lines":2}
+{"time":"2026-03-18T16:47:18.541369-04:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-03-18T16:47:33.296772-04:00","level":"INFO","msg":"filestream: sending request","total_files":1,"events_offset":4,"events_lines":2}
+{"time":"2026-03-18T16:47:33.833048-04:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-03-18T16:47:35.747445-04:00","level":"INFO","msg":"stream: closing"}
+{"time":"2026-03-18T16:47:36.074018-04:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2026-03-18T16:47:36.074219-04:00","level":"INFO","msg":"filestream: sending request","total_files":2,"console_offset":3,"console_lines":16,"uploaded_len":3,"complete":true,"exit_code":1}
+{"time":"2026-03-18T16:47:36.353538-04:00","level":"INFO","msg":"filestream: request sent","status":"200 OK"}
+{"time":"2026-03-18T16:47:36.353838-04:00","level":"INFO","msg":"handler: closed"}
+{"time":"2026-03-18T16:47:36.354325-04:00","level":"INFO","msg":"sender: closed"}
+{"time":"2026-03-18T16:47:36.354355-04:00","level":"INFO","msg":"stream: closed"}
