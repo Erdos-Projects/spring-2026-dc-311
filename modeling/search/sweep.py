@@ -58,6 +58,7 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
                 val_df   = feat_df[feat_df["split"] == "val"]
 
                 if len(train_df) < 10 or len(val_df) < 5:
+                    run.log("Skipping trial because of insufficient data")
                     run.log({"val_mae": float("inf"),
                              "val_rmse": float("inf"),
                              "val_poisson_deviance": float("inf")})
@@ -101,7 +102,7 @@ def _agent_entry(cfg: DictConfig, count: int, agent_label: str) -> None:
 def run_sweep(cfg: DictConfig) -> None:
     total_count = int(cfg.sweep_run.count)
     n_agents = int(getattr(cfg.sweep_run, "parallel_agents", 1))
-
+    breakpoint()
     if total_count <= 0:
         raise ValueError("sweep_run.count must be > 0")
     if n_agents <= 0:
