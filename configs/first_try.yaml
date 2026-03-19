@@ -24,6 +24,7 @@ model:
   alpha: 1.0
 
 split:
+  method: random
   random_state: 42
   train_frac: 0.70
   val_frac: 0.15
