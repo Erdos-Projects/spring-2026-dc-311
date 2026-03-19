@@ -39,7 +39,7 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
     print(f"[{agent_label}] Data loaded. Joining sweep {sweep_id} …")
 
     feature_names = ["d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f", "k_AR"]
-
+    # breakpoint()
     def trial():
         with wandb.init() as run:
             p = run.config
@@ -102,7 +102,7 @@ def _agent_entry(cfg: DictConfig, count: int, agent_label: str) -> None:
 def run_sweep(cfg: DictConfig) -> None:
     total_count = int(cfg.sweep_run.count)
     n_agents = int(getattr(cfg.sweep_run, "parallel_agents", 1))
-    breakpoint()
+    # breakpoint()
     if total_count <= 0:
         raise ValueError("sweep_run.count must be > 0")
     if n_agents <= 0:
