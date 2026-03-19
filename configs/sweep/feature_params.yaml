@@ -9,7 +9,9 @@ metric:
 
 parameters:
   d:
-    value: 1
+    distribution: int_uniform
+    min: 1
+    max: 5
   d_p:
     distribution: int_uniform
     min: 7
@@ -35,4 +37,6 @@ parameters:
     min: 1
     max: 10
   k_AR:
-    value: 0
+    distribution: int_uniform
+    min: 0
+    max: 1
