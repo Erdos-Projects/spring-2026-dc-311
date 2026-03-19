@@ -7,11 +7,11 @@ Initialize the sweep yourself first:
 Then start one or more agents with the returned sweep ID:
     python -m modeling.search.sweep +sweep_run=default sweep_run.sweep_id=<id>
 
-Run multiple agents in parallel to speed things up:
-    python -m modeling.search.sweep +sweep_run=default sweep_run.sweep_id=<id> sweep_run.count=200 &
-    python -m modeling.search.sweep +sweep_run=default sweep_run.sweep_id=<id> sweep_run.count=200 &
+Run multiple agents in parallel from one command:
+    python -m modeling.search.sweep +sweep_run=default sweep_run.sweep_id=<id> sweep_run.count=200 sweep_run.parallel_agents=4
 """
 
+import multiprocessing as mp
 from types import SimpleNamespace
 
 import hydra
@@ -25,7 +25,7 @@ from modeling.models import build_model
 from modeling.split import make_split
 
 
-def run_sweep(cfg: DictConfig) -> None:
+def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1") -> None:
     sweep_id = cfg.sweep_run.sweep_id
     if not sweep_id:
         raise ValueError(
@@ -34,9 +34,9 @@ def run_sweep(cfg: DictConfig) -> None:
             "  wandb sweep configs/sweep/feature_params.yaml --project DC-311-Pothole-Prediction"
         )
 
-    print(f"Loading data for ward={cfg.ward.name} …")
+    print(f"[{agent_label}] Loading data for ward={cfg.ward.name} …")
     pothole_df, weather_df = build_daily(cfg)
-    print(f"Data loaded. Joining sweep {sweep_id} …")
+    print(f"[{agent_label}] Data loaded. Joining sweep {sweep_id} …")
 
     feature_names = ["d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f", "k_AR"]
 
@@ -85,8 +85,57 @@ def run_sweep(cfg: DictConfig) -> None:
         function=trial,
         entity=cfg.wandb.entity,
         project=cfg.wandb.project,
-        count=int(cfg.sweep_run.count),
+        count=int(count),
     )
+
+
+def _counts_per_agent(total_count: int, n_agents: int) -> list[int]:
+    base, rem = divmod(total_count, n_agents)
+    return [base + (1 if i < rem else 0) for i in range(n_agents)]
+
+
+def _agent_entry(cfg: DictConfig, count: int, agent_label: str) -> None:
+    _run_single_agent(cfg, count, agent_label=agent_label)
+
+
+def run_sweep(cfg: DictConfig) -> None:
+    total_count = int(cfg.sweep_run.count)
+    n_agents = int(getattr(cfg.sweep_run, "parallel_agents", 1))
+
+    if total_count <= 0:
+        raise ValueError("sweep_run.count must be > 0")
+    if n_agents <= 0:
+        raise ValueError("sweep_run.parallel_agents must be > 0")
+
+    if n_agents == 1:
+        _run_single_agent(cfg, total_count)
+        return
+
+    counts = [c for c in _counts_per_agent(total_count, n_agents) if c > 0]
+    print(
+        f"Launching {len(counts)} parallel agents for total count={total_count} "
+        f"with per-agent counts={counts}"
+    )
+
+    ctx = mp.get_context("spawn")
+    procs: list[mp.Process] = []
+    for i, count_i in enumerate(counts, start=1):
+        p = ctx.Process(
+            target=_agent_entry,
+            args=(cfg, count_i, f"agent-{i}"),
+            name=f"sweep-agent-{i}",
+        )
+        p.start()
+        procs.append(p)
+
+    failed = False
+    for p in procs:
+        p.join()
+        if p.exitcode != 0:
+            failed = True
+
+    if failed:
+        raise RuntimeError("One or more parallel sweep agents failed.")
 
 
 @hydra.main(config_path="../../configs", config_name="config", version_base=None)
