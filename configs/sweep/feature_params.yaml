@@ -8,10 +8,10 @@ metric:
   goal: minimize
 
 parameters:
-  d:
-    distribution: int_uniform
-    min: 1
-    max: 1
+  # d:
+  #   distribution: int_uniform
+  #   min: 1
+  #   max: 10
   d_p:
     distribution: int_uniform
     min: 7

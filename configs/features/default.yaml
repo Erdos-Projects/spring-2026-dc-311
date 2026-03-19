@@ -1,4 +1,4 @@
-d: 5 # horizon (potholes in the next d days)
+d: 1 # horizon (potholes in the next d days)
 d_p: 14 # precipitation rolling window
 l_p: 5 # precipitation lag
 d_s: 14 # snowfall rolling window
