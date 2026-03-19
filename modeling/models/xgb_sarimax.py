@@ -6,10 +6,52 @@ on the training residuals.  At prediction time the XGBoost structural forecast
 and the SARIMAX residual correction are summed.
 """
 
+import logging
 import numpy as np
 import pandas as pd
 from statsmodels.tsa.arima.model import ARIMA
 from xgboost import XGBRegressor
+from pmdarima import auto_arima
+logger = logging.getLogger(__name__)
+import contextlib
+import sys
+
+class _LoggerWriter:
+    """File-like writer that mirrors stdout text to logger."""
+
+    def __init__(self, log_fn):
+        self.log_fn = log_fn
+        self._buf = ""
+
+    def write(self, msg: str) -> int:
+        self._buf += msg
+        while "\n" in self._buf:
+            line, self._buf = self._buf.split("\n", 1)
+            if line.strip():
+                self.log_fn(line)
+        return len(msg)
+
+    def flush(self) -> None:
+        if self._buf.strip():
+            self.log_fn(self._buf.strip())
+        self._buf = ""
+
+
+class _TeeWriter:
+    """File-like writer that writes to stdout and logger writer."""
+
+    def __init__(self, stream, logger_writer: _LoggerWriter):
+        self.stream = stream
+        self.logger_writer = logger_writer
+
+    def write(self, msg: str) -> int:
+        self.stream.write(msg)
+        self.logger_writer.write(msg)
+        return len(msg)
+
+    def flush(self) -> None:
+        self.stream.flush()
+        self.logger_writer.flush()
 
 
 class xgb_sarimax:
@@ -73,20 +115,21 @@ class xgb_sarimax:
         residuals = y.values - self._xgb.predict(X)
 
         if self.auto_order:
-            try:
-                from pmdarima import auto_arima
-            except ImportError as e:
-                raise ImportError("pmdarima is required for auto_order: pip install pmdarima") from e
-            ar = auto_arima(
-                residuals,
-                seasonal=True,
-                m=7,
-                stepwise=True,
-                suppress_warnings=True,
-                error_action="ignore",
-            )
+
+            logger.info("Starting pmdarima.auto_arima tuning (seasonal=True, m=7, stepwise=True)")
+            with contextlib.redirect_stdout(_TeeWriter(sys.stdout, _LoggerWriter(logger.info))):
+                ar = auto_arima(
+                    residuals,
+                    seasonal=True,
+                    m=7,
+                    stepwise=True,
+                    suppress_warnings=True,
+                    error_action="ignore",
+                    trace=True,
+                )
             self.order = ar.order
             self.seasonal_order = ar.seasonal_order
+            logger.info("auto_arima selected order=%s seasonal_order=%s", self.order, self.seasonal_order)
 
         self._sarimax_result = ARIMA(
             residuals,
