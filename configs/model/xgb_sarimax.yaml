@@ -1,0 +1,15 @@
+_target_: modeling.models.xgb_sarimax.xgb_sarimax
+name: xgb_sarimax
+
+# XGBoost hyperparams
+n_estimators: 300
+learning_rate: 0.05
+max_depth: 6
+objective: "count:poisson"
+
+# SARIMAX orders (from notebook: ARIMA(3,0,2)(1,1,1)[7], AIC=5542.77)
+order: [5, 0, 2]
+seasonal_order: [0, 0, 1, 7]
+
+# Set to true to run pmdarima.auto_arima inside fit() for order discovery
+auto_order: true

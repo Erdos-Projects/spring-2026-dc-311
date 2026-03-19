@@ -1,0 +1,44 @@
+{
+  "os": "macOS-15.3.2-arm64-arm-64bit",
+  "python": "CPython 3.12.12",
+  "startedAt": "2026-03-19T19:24:43.459942Z",
+  "args": [
+    "+sweep_run=default",
+    "sweep_run.sweep_id=kfrpgkgg",
+    "ward=ward3_2021_2025",
+    "model=xgb_sarimax",
+    "split=temporal"
+  ],
+  "program": "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/search/sweep.py",
+  "codePath": "modeling/search/sweep.py",
+  "codePathLocal": "modeling/search/sweep.py",
+  "git": {
+    "remote": "https://github.com/Erdos-Projects/spring-2026-dc-311.git",
+    "commit": "94314e0b19d3fd64d99d86d12417b919bade3775"
+  },
+  "email": "ssule25@umd.edu",
+  "root": "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311",
+  "host": "MacBook-Pro-208.local",
+  "executable": "/Users/shashanksule/miniforge3/envs/erdos_ds_environment/bin/python3",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "240633163776"
+    }
+  },
+  "memory": {
+    "total": "8589934592"
+  },
+  "apple": {
+    "name": "Apple M1",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 8,
+    "swapTotalBytes": "5368709120",
+    "ramTotalBytes": "8589934592"
+  },
+  "writerId": "s3e3bmysossfgra51klbixv42jumaxf5"
+}

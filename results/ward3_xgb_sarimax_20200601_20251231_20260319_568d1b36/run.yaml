@@ -1,0 +1,50 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+features:
+  d: 5
+  d_f: 14
+  d_p: 14
+  d_s: 14
+  k_AR: 0
+  l_f: 5
+  l_p: 5
+  l_s: 5
+load_model: null
+model:
+  _target_: modeling.models.xgb_sarimax.xgb_sarimax
+  auto_order: true
+  learning_rate: 0.05
+  max_depth: 6
+  n_estimators: 300
+  name: xgb_sarimax
+  objective: count:poisson
+  order:
+  - 3
+  - 0
+  - 2
+  seasonal_order:
+  - 1
+  - 1
+  - 1
+  - 7
+model_name: xgb_sarimax
+model_path: results/ward3_xgb_sarimax_20200601_20251231_20260319_568d1b36/model.pkl
+root: .
+run_id: 20260319_568d1b36
+split:
+  method: temporal
+  test_frac: 0.15
+  val_frac: 0.15
+wandb:
+  enabled: false
+  entity: ssule25-university-of-maryland
+  project: DC-311-Pothole-Prediction
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20210101_20251231.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20200601_20251231.parquet
+wx_range: '20200601_20251231'

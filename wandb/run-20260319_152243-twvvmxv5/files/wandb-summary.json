@@ -1,0 +1,1 @@
+{"_timestamp":1.7739481667307892e+09,"_step":0,"val_mae":2.5492805849231184,"val_rmse":4.189405174186392,"_wandb":{"runtime":2},"_runtime":2,"val_poisson_deviance":3.431578564846973,"n_features":20}

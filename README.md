@@ -3,8 +3,10 @@
 This project models daily DC 311 `Pothole` request counts using exogenous weather variables:
 precipitation, snowfall, and freeze-thaw cycles. The core idea is to build rolling/lagged weather aggregates and learn how they relate to future request counts.
 
+Our main stakeholder is Washington DC’s DDOTs (District Department of Transportation), who want a practical forecast of how many pothole issues may need repair every `d` days. A more accurate short-horizon forecast can improve inventory and staffing decisions and has the potential to save tens of thousands of dollars.
+
 ## Problem
-Given a day `t`, predict pothole request counts for the next `d` days using only information available up to `t` (weather features are built from lags), with count-appropriate models for overdispersed targets.
+Given a day `t`, predict pothole request counts for the next `d` days using only information available up to `t` (weather features are built from lags). This short-horizon forecast is designed to support DDOTs planning over the next `d` days, with count-appropriate models for overdispersed targets.
 
 The pipeline is intentionally “ward-by-ward”: you train a separate model per ward/centroid.
 

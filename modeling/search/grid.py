@@ -1,9 +1,13 @@
 """
 Phase-1 exhaustive grid search over feature hyperparameters.
 
-For each parameter combination, assembles features, fits a fast Ridge proxy
-model, and scores validation MAE.  Results are written to
-results/grid_{ward}.csv, sorted by val_mae ascending.
+For each parameter combination, assembles features, fits the configured model,
+and scores validation MAE.  Results are written to results/grid_{ward}.csv,
+sorted by val_mae ascending.
+
+Note: when using xgb_sarimax, each trial fits both XGBoost and a SARIMAX model,
+which is significantly slower than lighter models.  Consider using the Bayesian
+search (bayes.py) alone for xgb_sarimax if runtime is a concern.
 
 Usage:
     python -m modeling.search.grid                      # default (ward3, +search=grid)
@@ -19,16 +23,16 @@ import numpy as np
 import pandas as pd
 from joblib import Parallel, delayed
 from omegaconf import DictConfig
-from sklearn.linear_model import Ridge
 
 from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, poisson_deviance
+from modeling.models import build_model
 from modeling.split import make_split
 
 
 def _evaluate_one(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
-                  cfg_split, params: dict) -> dict:
+                  cfg_split, cfg_model, params: dict) -> dict:
     """Evaluate a single parameter combination. Returns params + val metrics."""
     from types import SimpleNamespace
 
@@ -43,19 +47,14 @@ def _evaluate_one(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
         if len(train_df) < 10 or len(val_df) < 5:
             return {**params, "val_mae": float("inf"), "val_poisson_dev": float("inf")}
 
-        X_tr = train_df[feature_cols].values.astype(float)
-        y_tr = train_df["Y"].values.astype(float)
-        X_v = val_df[feature_cols].values.astype(float)
-        y_v = val_df["Y"].values.astype(float)
-
-        model = Ridge(alpha=1.0)
-        model.fit(X_tr, y_tr)
-        preds = np.clip(model.predict(X_v), 0, None)
+        model = build_model(cfg_model)
+        model.fit(train_df[feature_cols], train_df["Y"])
+        preds = model.predict(val_df[feature_cols])
 
         return {
             **params,
-            "val_mae": float(mae(y_v, preds)),
-            "val_poisson_dev": float(poisson_deviance(y_v, preds)),
+            "val_mae": float(mae(val_df["Y"].values, preds)),
+            "val_poisson_dev": float(poisson_deviance(val_df["Y"].values, preds)),
         }
     except Exception as exc:
         return {
@@ -86,7 +85,7 @@ def run_grid(cfg: DictConfig) -> pd.DataFrame:
     print(f"Grid search: {len(all_params):,} combinations, n_jobs={n_jobs}")
 
     results = Parallel(n_jobs=n_jobs, verbose=5)(
-        delayed(_evaluate_one)(pothole_df, weather_df, cfg.split, params)
+        delayed(_evaluate_one)(pothole_df, weather_df, cfg.split, cfg.model, params)
         for params in all_params
     )
 

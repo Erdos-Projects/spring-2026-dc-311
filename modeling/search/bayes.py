@@ -19,17 +19,17 @@ import hydra
 import numpy as np
 import pandas as pd
 from omegaconf import DictConfig
-from sklearn.linear_model import Ridge
 
 from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, poisson_deviance
+from modeling.models import build_model
 from modeling.split import make_split
 
 
 def _score_params(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
-                  cfg_split, params: dict) -> float:
-    """Return validation MAE for a given parameter dict (Ridge proxy)."""
+                  cfg_split, cfg_model, params: dict) -> float:
+    """Return validation MAE for a given parameter dict using the configured model."""
     try:
         feat_df = assemble_features(pothole_df, weather_df, SimpleNamespace(**params))
         feat_df = make_split(feat_df, cfg_split)
@@ -41,9 +41,9 @@ def _score_params(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
         if len(train_df) < 10 or len(val_df) < 5:
             return float("inf")
 
-        model = Ridge(alpha=1.0)
-        model.fit(train_df[feature_cols].values, train_df["Y"].values)
-        preds = np.clip(model.predict(val_df[feature_cols].values), 0, None)
+        model = build_model(cfg_model)
+        model.fit(train_df[feature_cols], train_df["Y"])
+        preds = model.predict(val_df[feature_cols])
         return float(mae(val_df["Y"].values, preds))
     except Exception:
         return float("inf")
@@ -78,7 +78,7 @@ def run_bayes(cfg: DictConfig) -> dict:
             "l_f":  trial.suggest_int("l_f",  ss.l_f.low,  ss.l_f.high),
             "k_AR": trial.suggest_int("k_AR", ss.k_AR.low, ss.k_AR.high),
         }
-        return _score_params(pothole_df, weather_df, cfg.split, params)
+        return _score_params(pothole_df, weather_df, cfg.split, cfg.model, params)
 
     optuna.logging.set_verbosity(optuna.logging.WARNING)
     study = optuna.create_study(

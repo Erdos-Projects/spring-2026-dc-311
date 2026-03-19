@@ -1,0 +1,40 @@
+{
+  "os": "macOS-15.3.2-arm64-arm-64bit",
+  "python": "CPython 3.12.12",
+  "startedAt": "2026-03-19T18:06:11.162108Z",
+  "args": [
+    "++load_model=ward3_xgb_sarimax_20200601_20251231_20260319_1e11782b"
+  ],
+  "program": "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311/modeling/evaluate.py",
+  "codePath": "modeling/evaluate.py",
+  "codePathLocal": "modeling/evaluate.py",
+  "git": {
+    "remote": "https://github.com/Erdos-Projects/spring-2026-dc-311.git",
+    "commit": "94314e0b19d3fd64d99d86d12417b919bade3775"
+  },
+  "email": "ssule25@umd.edu",
+  "root": "/Users/shashanksule/Documents/ErdosSpring26/spring-2026-dc-311",
+  "host": "MacBook-Pro-208.local",
+  "executable": "/Users/shashanksule/miniforge3/envs/erdos_ds_environment/bin/python3",
+  "cpu_count": 8,
+  "cpu_count_logical": 8,
+  "disk": {
+    "/": {
+      "total": "245107195904",
+      "used": "238111981568"
+    }
+  },
+  "memory": {
+    "total": "8589934592"
+  },
+  "apple": {
+    "name": "Apple M1",
+    "ecpuCores": 4,
+    "pcpuCores": 4,
+    "gpuCores": 8,
+    "memoryGb": 8,
+    "swapTotalBytes": "3221225472",
+    "ramTotalBytes": "8589934592"
+  },
+  "writerId": "6mwpk2jh2bhdyyp07y5h2m4miewj9mw2"
+}

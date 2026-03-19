@@ -1,0 +1,5 @@
+# Number of trials this agent runs before exiting.
+count: 50
+
+# Sweep ID returned by `wandb sweep`. Must be set before running the agent.
+sweep_id: null

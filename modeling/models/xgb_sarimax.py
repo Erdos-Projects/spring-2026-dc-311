@@ -1,0 +1,106 @@
+"""
+XGB + SARIMAX hybrid model.
+
+Fits an XGBoost regressor on the tabular features, then fits a SARIMAX model
+on the training residuals.  At prediction time the XGBoost structural forecast
+and the SARIMAX residual correction are summed.
+"""
+
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.arima.model import ARIMA
+from xgboost import XGBRegressor
+
+
+class xgb_sarimax:
+    """
+    Two-stage hybrid: XGBoost for the structural mean, SARIMAX for the residuals.
+
+    fit(X, y):
+        1. Fit XGBoost on (X, y).
+        2. Compute in-sample residuals = y - xgb.predict(X).
+        3. If auto_order=True, run pmdarima.auto_arima on the residuals to
+           select (order, seasonal_order) by AIC; otherwise use the values
+           supplied at construction time.
+        4. Fit ARIMA(order, seasonal_order) on the residuals.
+
+    predict(X):
+        xgb.predict(X) + sarimax_result.forecast(steps=len(X))
+
+    Notes
+    -----
+    - No clipping is applied; callers may clip downstream if required.
+    - predict() always forecasts ``len(X)`` steps beyond the end of the
+      training data.  This is exact for sequential test/val folds.  The
+      "val metrics from final model" block in train.py (lines 221-226) fits
+      on train+val, so the SARIMAX correction there forecasts past train+val
+      rather than correcting the val period; that block is for reference only
+      and does not affect model selection.
+    - order and seasonal_order accept list/ListConfig (from YAML); they are
+      coerced to tuples in __init__.
+    - When auto_order=True the discovered order is stored on self and
+      serialised with the pickled model object.
+    """
+
+    name = "xgb_sarimax"
+
+    def __init__(
+        self,
+        n_estimators: int = 300,
+        learning_rate: float = 0.05,
+        max_depth: int = 6,
+        objective: str = "count:poisson",
+        order=(3, 0, 2),
+        seasonal_order=(1, 1, 1, 7),
+        auto_order: bool = False,
+        **kwargs,
+    ):
+        self.order = tuple(order)
+        self.seasonal_order = tuple(seasonal_order)
+        self.auto_order = auto_order
+
+        self._xgb = XGBRegressor(
+            n_estimators=n_estimators,
+            learning_rate=learning_rate,
+            max_depth=max_depth,
+            objective=objective,
+            verbosity=0,
+        )
+        self._sarimax_result = None
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "xgb_sarimax":
+        self._xgb.fit(X, y)
+        residuals = y.values - self._xgb.predict(X)
+
+        if self.auto_order:
+            try:
+                from pmdarima import auto_arima
+            except ImportError as e:
+                raise ImportError("pmdarima is required for auto_order: pip install pmdarima") from e
+            ar = auto_arima(
+                residuals,
+                seasonal=True,
+                m=7,
+                stepwise=True,
+                suppress_warnings=True,
+                error_action="ignore",
+            )
+            self.order = ar.order
+            self.seasonal_order = ar.seasonal_order
+
+        self._sarimax_result = ARIMA(
+            residuals,
+            order=self.order,
+            seasonal_order=self.seasonal_order,
+        ).fit()
+
+        return self
+
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        xgb_pred = self._xgb.predict(X)
+        correction = self._sarimax_result.forecast(steps=len(X))
+        return xgb_pred + correction
+
+    @property
+    def feature_importances_(self) -> np.ndarray:
+        return self._xgb.feature_importances_
