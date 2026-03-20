@@ -8,7 +8,7 @@
   "variables": [
     "temperature_2m",
     "precipitation",
-    "snowfall"
+    "snow_depth"
   ],
   "timezone": "America/New_York",
   "latitude": 38.96046109444924,

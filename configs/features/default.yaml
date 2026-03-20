@@ -1,8 +1,8 @@
 d: 1 # horizon (potholes in the next d days)
-d_p: 20 # precipitation rolling window
-l_p: 5 # precipitation lag
-d_s: 14 # snowfall rolling window
-l_s: 7 # snowfall lag
+d_p: 15 # precipitation rolling window
+l_p: 10 # precipitation lag
+d_s: 15 # snow_depth rolling window
+l_s: 0 # snow_depth lag
 d_f: 15 # freeze-thaw rolling window
-l_f: 7 # freeze-thaw lag
+l_f: 0 # freeze-thaw lag
 k_AR: 0 # autoregressive lags (0 = non-autoregressive)

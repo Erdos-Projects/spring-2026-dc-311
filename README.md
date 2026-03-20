@@ -1,7 +1,7 @@
 # DC 311 Pothole Forecasting (Winter Weather)
 
 This project models daily DC 311 `Pothole` request counts using exogenous weather variables:
-precipitation, snowfall, and freeze-thaw cycles. The core idea is to build rolling/lagged weather aggregates and learn how they relate to future request counts.
+precipitation, snow depth, and freeze-thaw cycles. The core idea is to build rolling/lagged weather aggregates and learn how they relate to future request counts.
 
 Our main stakeholder is Washington DC’s DDOTs (District Department of Transportation), who want a practical forecast of how many pothole issues may need repair every `d` days. A more accurate short-horizon forecast can improve inventory and staffing decisions and has the potential to save tens of thousands of dollars.
 
@@ -27,12 +27,12 @@ Data source: Open-Meteo archive API queried for each ward centroid.
 We request hourly:
 - `temperature_2m` (C)
 - `precipitation` (mm)
-- `snowfall` (cm)
+- `snow_depth` (cm)
 
 Implementation entrypoints:
 - `data/weather_fetch.py` (API fetch + caching)
 - `modeling/data/master.py`
-  - resamples hourly weather to daily precipitation/snow totals
+  - resamples hourly weather to daily precipitation/snow_depth (mean)
   - computes daily freeze-thaw cycle counts from hourly temperature
 
 ## Feature Choices (Inductive Biases)
@@ -40,7 +40,7 @@ Implementation entrypoints:
 Feature engineering follows the inductive biases suggested by exploratory analysis:
 
 1. **Ward-by-ward modeling** because weather-to-requests relationships vary spatially.
-2. **Noise-robust aggregation**: instead of single-day weather, use accumulated precipitation/snowfall and freeze-thaw cycles over windows.
+2. **Noise-robust aggregation**: instead of single-day weather, use accumulated precipitation/snow depth and freeze-thaw cycles over windows.
 3. **Lagged influence**: weather effects are assumed to act with a lag. We aggregate over `d` days ending `l` days before the prediction date.
 
 Exploratory notebook link:
@@ -50,7 +50,7 @@ Exploratory notebook link:
 In `modeling/features.py`, daily weather covariates are computed as:
 
 - `precip_roll = rolling(d_p).sum().shift(l_p)`
-- `snow_roll   = rolling(d_s).sum().shift(l_s)`
+- `snow_roll   = rolling(d_s).mean().shift(l_s)`  (snow_depth)
 - `ftc_roll    = rolling(d_f).sum().shift(l_f)`
 
 ### Freeze-thaw cycle feature
@@ -113,7 +113,7 @@ Important note: if you override configs on the CLI, override the keys actually u
 Weather aggregation and target horizon are controlled by:
 - `features.d` (forecast horizon in days)
 - `features.d_p`, `features.l_p` (precipitation window + lag)
-- `features.d_s`, `features.l_s` (snowfall window + lag)
+- `features.d_s`, `features.l_s` (snow_depth window + lag)
 - `features.d_f`, `features.l_f` (freeze-thaw window + lag)
 - `features.k_AR` (how many autoregressive pothole lags to include)
 

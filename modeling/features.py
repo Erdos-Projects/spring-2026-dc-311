@@ -26,6 +26,7 @@ def assemble_features(
     pothole_df: pd.DataFrame,
     weather_df: pd.DataFrame,
     cfg_features,
+    verbose: bool = True,
 ) -> pd.DataFrame:
     """
     Build the feature matrix for one parameter configuration.
@@ -62,7 +63,7 @@ def assemble_features(
     # ── Weather rolling features (computed on full range for Dec context) ─────
     w = weather_df.copy()
     w["precip_roll"] = w["daily_precip"].rolling(d_p).sum().shift(l_p)
-    w["snow_roll"]   = w["daily_snow"].rolling(d_s).sum().shift(l_s)
+    w["snow_roll"]   = w["daily_snow"].rolling(d_s).mean().shift(l_s)
     w["ftc_roll"]    = w["daily_ftc"].rolling(d_f).sum().shift(l_f)
     w = w.drop(columns=["daily_precip", "daily_snow", "daily_ftc"])
 
@@ -82,5 +83,6 @@ def assemble_features(
     df = df.drop(columns=["pothole_count"])
 
     df_clean = df.dropna().reset_index(drop=True)
-    print(f"[assemble_features] kept {len(df_clean)}/{len(df)} rows ({len(df_clean)/len(df):.1%}) after dropping NaNs")
+    if verbose:
+        print(f"[assemble_features] kept {len(df_clean)}/{len(df)} rows ({len(df_clean)/len(df):.1%}) after dropping NaNs")
     return df_clean

@@ -44,13 +44,30 @@ class NegBinGLM:
         ).fit(disp=0)
         return self
 
-    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
-
+    def predict(self, X: pd.DataFrame, *, recursive: bool = False, **kwargs) -> np.ndarray:
         if self._result is None:
             raise RuntimeError("Call fit() before predict().")
-        X_const = sm.add_constant(X.astype(float), has_constant="add")
-        preds = self._result.predict(X_const)
-        return np.clip(preds, 0, None)
+
+        ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        if not recursive or len(ar_cols) == 0:
+            X_const = sm.add_constant(X.astype(float), has_constant="add")
+            preds = self._result.predict(X_const)
+            return np.clip(preds, 0, None)
+
+        k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
+        X_work = X.copy().astype(float)
+        preds = []
+        print("Using recursive prediction with k_AR = {k_AR}")
+        for i in range(len(X)):
+            if i > 0:
+                for k in range(1, min(i, k_AR) + 1):
+                    col = f"pothole_lag{k}"
+                    if col in X_work.columns:
+                        X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
+            X_const = sm.add_constant(X_work.iloc[[i]], has_constant="add")
+            pred_i = self._result.predict(X_const).item()
+            preds.append(max(0.0, pred_i))
+        return np.array(preds)
 
     def summary(self):
         return self._result.summary() if self._result else None

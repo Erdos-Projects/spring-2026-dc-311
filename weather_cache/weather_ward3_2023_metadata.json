@@ -8,7 +8,7 @@
   "variables": [
     "temperature_2m",
     "precipitation",
-    "snowfall"
+    "snow_depth"
   ],
   "timezone": "America/New_York",
   "latitude_source": "mean LATITUDE of all Ward 3 service requests in All_Service_Requests_-_2023.csv",

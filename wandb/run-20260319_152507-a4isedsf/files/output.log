@@ -1,3 +1,0 @@
-[assemble_features] kept 1820/1826 rows (99.7%) after dropping NaNs
-/Users/shashanksule/miniforge3/envs/erdos_ds_environment/lib/python3.12/site-packages/statsmodels/base/model.py:607: ConvergenceWarning: Maximum Likelihood optimization failed to converge. Check mle_retvals
-  warnings.warn("Maximum Likelihood optimization failed to "

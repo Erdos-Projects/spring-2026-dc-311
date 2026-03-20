@@ -22,8 +22,23 @@ class LGBMModel:
         self._model.fit(X, y)
         return self
 
-    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
-        return np.clip(self._model.predict(X), 0, None)
+    def predict(self, X: pd.DataFrame, *, recursive: bool = False, **kwargs) -> np.ndarray:
+        ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        if not recursive or len(ar_cols) == 0:
+            return np.clip(self._model.predict(X), 0, None)
+
+        k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
+        X_work = X.copy()
+        preds = []
+        for i in range(len(X)):
+            if i > 0:
+                for k in range(1, min(i, k_AR) + 1):
+                    col = f"pothole_lag{k}"
+                    if col in X_work.columns:
+                        X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
+            pred_i = self._model.predict(X_work.iloc[[i]])[0]
+            preds.append(max(0.0, pred_i))
+        return np.array(preds)
 
     @property
     def feature_importances_(self) -> np.ndarray:
@@ -58,8 +73,24 @@ class XGBModel:
         self._model.fit(X, y)
         return self
 
-    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
-        return np.clip(self._model.predict(X), 0, None)
+    def predict(self, X: pd.DataFrame, *, recursive: bool = False, **kwargs) -> np.ndarray:
+        ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        if not recursive or len(ar_cols) == 0:
+            return np.clip(self._model.predict(X), 0, None)
+
+        k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
+        X_work = X.copy()
+        preds = []
+        print("Using recursive prediction with k_AR = {k_AR}")
+        for i in range(len(X)):
+            if i > 0:
+                for k in range(1, min(i, k_AR) + 1):
+                    col = f"pothole_lag{k}"
+                    if col in X_work.columns:
+                        X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
+            pred_i = self._model.predict(X_work.iloc[[i]])[0]
+            preds.append(max(0.0, pred_i))
+        return np.array(preds)
 
     @property
     def feature_importances_(self) -> np.ndarray:

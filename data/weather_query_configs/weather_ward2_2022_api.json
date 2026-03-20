@@ -8,7 +8,7 @@
   "variables": [
     "temperature_2m",
     "precipitation",
-    "snowfall"
+    "snow_depth"
   ],
   "timezone": "America/New_York",
   "latitude_source": "mean LATITUDE of 2022 311 rows in this ward",

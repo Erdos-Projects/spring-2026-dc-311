@@ -186,7 +186,7 @@ def get_hourly_weather(
     end_date: str,
 ) -> pd.DataFrame:
     """
-    Fetch hourly temperature_2m, precipitation, and snowfall from the
+    Fetch hourly temperature_2m, precipitation, and snow_depth from the
     Open-Meteo archive API for the given coordinates and date range.
 
     Parameters
@@ -202,7 +202,7 @@ def get_hourly_weather(
     -------
     pd.DataFrame
         Hourly rows with columns: date (America/New_York tz-aware),
-        temperature_2m (°C), precipitation (mm), snowfall (cm).
+        temperature_2m (°C), precipitation (mm), snow_depth (m).
     """
     cache_session = requests_cache.CachedSession(".cache", expire_after=-1)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
@@ -213,7 +213,7 @@ def get_hourly_weather(
         "longitude":  lon,
         "start_date": start_date,
         "end_date":   end_date,
-        "hourly":     ["temperature_2m", "precipitation", "snowfall"],
+        "hourly":     ["temperature_2m", "precipitation", "snow_depth"],
         "timezone":   "America/New_York",
     }
     response = openmeteo.weather_api(
@@ -232,7 +232,7 @@ def get_hourly_weather(
             ),
             "temperature_2m": hourly.Variables(0).ValuesAsNumpy(),
             "precipitation":  hourly.Variables(1).ValuesAsNumpy(),
-            "snowfall":       hourly.Variables(2).ValuesAsNumpy(),
+            "snow_depth":     hourly.Variables(2).ValuesAsNumpy(),
         }
     )
     return df
@@ -243,7 +243,7 @@ def get_hourly_weather(
 # ---------------------------------------------------------------------------
 
 API_URL           = "https://archive-api.open-meteo.com/v1/archive"
-DEFAULT_VARIABLES = ["temperature_2m", "precipitation", "snowfall"]
+DEFAULT_VARIABLES = ["temperature_2m", "precipitation", "snow_depth"]
 DEFAULT_TIMEZONE  = "America/New_York"
 
 
@@ -283,7 +283,7 @@ def write_query_config(
         IANA timezone string passed to the Open-Meteo API.
     variables : list[str] | None
         Hourly variables to request.  Defaults to
-        ``["temperature_2m", "precipitation", "snowfall"]``.
+        ``["temperature_2m", "precipitation", "snow_depth"]``.
 
     Returns
     -------

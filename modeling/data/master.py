@@ -96,6 +96,14 @@ def compute_daily_ftc(df_hourly: pd.DataFrame, min_hours: int = 4,
 
 def _aggregate_to_daily(df_hourly: pd.DataFrame) -> pd.DataFrame:
     """Resample hourly weather to daily summaries."""
+    # Support both snow_depth (new) and snowfall (legacy cached data)
+    if "snow_depth" in df_hourly.columns:
+        snow_agg = ("snow_depth", "mean")
+    elif "snowfall" in df_hourly.columns:
+        snow_agg = ("snowfall", "sum")
+    else:
+        raise KeyError("Hourly weather must have 'snow_depth' or 'snowfall' column")
+
     daily = (
         df_hourly.resample("D", on="date")
         .agg(
@@ -103,7 +111,7 @@ def _aggregate_to_daily(df_hourly: pd.DataFrame) -> pd.DataFrame:
             tmin_c=("temperature_2m", "min"),
             tmean_c=("temperature_2m", "mean"),
             precip_mm=("precipitation", "sum"),
-            snow_cm=("snowfall", "sum"),
+            snow_cm=snow_agg,
         )
         .reset_index()
     )

@@ -1,9 +1,12 @@
 pandas
+pyarrow
 numpy
 matplotlib
 seaborn
 statsmodels
 scikit-learn
+lightgbm
+xgboost
 openmeteo-requests
 requests-cache
 retry-requests

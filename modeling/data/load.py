@@ -49,6 +49,6 @@ def load_weather(cfg: DictConfig) -> pd.DataFrame:
     Load hourly weather from the pre-fetched parquet file.
 
     Returns a DataFrame with America/New_York tz-aware timestamps in the
-    'date' column and columns: temperature_2m, precipitation, snowfall.
+    'date' column and columns: temperature_2m, precipitation, snow_depth.
     """
     return pd.read_parquet(Path(cfg.ward.weather_cache))

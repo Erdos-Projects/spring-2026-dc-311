@@ -147,7 +147,7 @@ class xgb_sarimax:
             xgb_pred = self._xgb.predict(X)
             correction = self._sarimax_result.forecast(steps=len(X))
             return xgb_pred + correction
-
+        print("Using recursive prediction with k_AR = {k_AR}")
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         correction = self._sarimax_result.forecast(steps=len(X))
         X_work = X.copy()

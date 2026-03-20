@@ -12,8 +12,8 @@ features:
   d: 5     # forecast horizon (days)
   d_p: 14  # precipitation rolling window
   l_p: 5   # precipitation lag
-  d_s: 14  # snowfall rolling window
-  l_s: 5   # snowfall lag
+  d_s: 14  # snow_depth rolling window
+  l_s: 5   # snow_depth lag
   d_f: 14  # freeze-thaw rolling window
   l_f: 5   # freeze-thaw lag
   k_AR: 0  # autoregressive lags (0 = non-autoregressive)
