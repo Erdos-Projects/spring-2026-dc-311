@@ -1,11 +1,12 @@
 from modeling.models.baseline import SeasonalNaive
-from modeling.models.glm import NegBinGLM
+from modeling.models.glm import NegBinGLM, PoissonGLM
 from modeling.models.gbm import LGBMModel, XGBModel
 from modeling.models.xgb_sarimax import xgb_sarimax
 
 MODEL_REGISTRY = {
     "modeling.models.baseline.SeasonalNaive": SeasonalNaive,
     "modeling.models.glm.NegBinGLM": NegBinGLM,
+    "modeling.models.glm.PoissonGLM": PoissonGLM,
     "modeling.models.gbm.LGBMModel": LGBMModel,
     "modeling.models.gbm.XGBModel": XGBModel,
     "modeling.models.xgb_sarimax.xgb_sarimax": xgb_sarimax,
