@@ -49,7 +49,8 @@ def _evaluate_one(pothole_df: pd.DataFrame, weather_df: pd.DataFrame,
 
         model = build_model(cfg_model)
         model.fit(train_df[feature_cols], train_df["Y"])
-        preds = model.predict(val_df[feature_cols])
+        split_method = getattr(cfg_split, "method", "random")
+        preds = model.predict(val_df[feature_cols], recursive=(split_method == "temporal"))
 
         return {
             **params,

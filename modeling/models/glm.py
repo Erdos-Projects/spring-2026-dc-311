@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import statsmodels.api as sm
 
 
 class NegBinGLM:
@@ -43,8 +44,7 @@ class NegBinGLM:
         ).fit(disp=0)
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        import statsmodels.api as sm
+    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
 
         if self._result is None:
             raise RuntimeError("Call fit() before predict().")

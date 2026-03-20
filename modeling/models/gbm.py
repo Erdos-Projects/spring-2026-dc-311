@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+from lightgbm import LGBMRegressor
 
 class LGBMModel:
     """LightGBM regressor with Poisson objective (sklearn-style interface)."""
@@ -9,10 +9,6 @@ class LGBMModel:
 
     def __init__(self, n_estimators: int = 300, learning_rate: float = 0.05,
                  num_leaves: int = 31, objective: str = "poisson", **kwargs):
-        try:
-            from lightgbm import LGBMRegressor
-        except ImportError as e:
-            raise ImportError("lightgbm is required: pip install lightgbm") from e
 
         self._model = LGBMRegressor(
             n_estimators=n_estimators,
@@ -26,7 +22,7 @@ class LGBMModel:
         self._model.fit(X, y)
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
         return np.clip(self._model.predict(X), 0, None)
 
     @property
@@ -62,7 +58,7 @@ class XGBModel:
         self._model.fit(X, y)
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
         return np.clip(self._model.predict(X), 0, None)
 
     @property

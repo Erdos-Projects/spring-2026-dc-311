@@ -88,7 +88,7 @@ class LSTMModel:
 
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
         import torch
 
         if self._model is None:

@@ -126,8 +126,8 @@ def evaluate(cfg: DictConfig) -> dict:
     test_df = feat_df[feat_df["split"] == "test"]
     X_test = test_df[feature_cols]
     y_test = test_df["Y"].values
-    breakpoint()
-    preds = model.predict(X_test)
+    split_method = getattr(getattr(run_cfg, "split", None), "method", "random")
+    preds = model.predict(X_test, recursive=(split_method == "temporal"))
     breakpoint()
     metrics = {
         "test_mae":              float(mae(y_test, preds)),

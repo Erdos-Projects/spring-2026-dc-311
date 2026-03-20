@@ -75,9 +75,9 @@ def assemble_features(
     # Y_t = sum(P_{t+1}, …, P_{t+d})
     df["Y"] = df["pothole_count"].rolling(d).sum().shift(-d)
 
-    # ── Autoregressive lags ───────────────────────────────────────────────────
+    # ── Autoregressive lags (lagged Y for forecast-time consistency) ───────────
     for k in range(1, k_AR + 1):
-        df[f"pothole_lag{k}"] = df["pothole_count"].shift(k)
+        df[f"pothole_lag{k}"] = df["Y"].shift(k)
 
     df = df.drop(columns=["pothole_count"])
 

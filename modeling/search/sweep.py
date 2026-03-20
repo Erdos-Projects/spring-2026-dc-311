@@ -66,7 +66,8 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
 
                 fitted = build_model(cfg.model)
                 fitted.fit(train_df[feature_cols], train_df["Y"])
-                preds = fitted.predict(val_df[feature_cols])
+                split_method = getattr(cfg.split, "method", "random")
+                preds = fitted.predict(val_df[feature_cols], recursive=(split_method == "temporal"))
 
                 run.log({
                     "val_mae":              float(mae(val_df["Y"].values, preds)),

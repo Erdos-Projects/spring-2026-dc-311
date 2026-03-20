@@ -36,7 +36,8 @@ from modeling.split import make_split
 
 def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
               quarters: pd.Series, k: int = 5,
-              random_state: int = 42, method: str = "random") -> dict:
+              random_state: int = 42, method: str = "random",
+              recursive: bool = False) -> dict:
     """
     K-fold CV on the training set; returns mean metrics and per-fold lists.
 
@@ -56,7 +57,7 @@ def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
         y_tr, y_v = y.iloc[train_idx], y.iloc[val_idx]
         model = build_model(cfg_model)
         model.fit(X_tr, y_tr)
-        preds = model.predict(X_v)
+        preds = model.predict(X_v, recursive=recursive)
         fold_mae.append(mae(y_v.values, preds))
         fold_rmse.append(rmse(y_v.values, preds))
         fold_pd.append(poisson_deviance(y_v.values, preds))
@@ -178,6 +179,7 @@ def train(cfg: DictConfig) -> dict:
         k=5,
         random_state=int(getattr(cfg.split, "random_state", 42)),
         method=split_method,
+        recursive=(split_method == "temporal"),
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
     breakpoint()
@@ -204,45 +206,45 @@ def train(cfg: DictConfig) -> dict:
         cv_metrics.pop("_fold_mae", None)
         cv_metrics.pop("_fold_rmse", None)
         cv_metrics.pop("_fold_pd", None)
-    breakpoint()
+    # breakpoint()
     if cfg.debug.dry_run:
         print("[dry-run] Skipping final fit and model save.")
         if cfg.wandb.enabled:
             wandb.finish()
         return cv_metrics
-    breakpoint()
+    # breakpoint()
     # ── Final fit on train + val ──────────────────────────────────────────────
     X_tv = train_val_df[feature_cols]
     y_tv = train_val_df["Y"] # get the target for the train and val set
     model = build_model(cfg.model) # build the model
     model.fit(X_tv, y_tv) # fit the model on the train and val set
-    breakpoint()
+    # breakpoint()
     # ── Val metrics from the final model (for reference) ─────────────────────
-    val_preds = model.predict(val_df[feature_cols]) # predict the val set
+    val_preds = model.predict(val_df[feature_cols], recursive=(split_method == "temporal"))
     val_metrics = {
         "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set
         "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set
         "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, val_preds)), # calculate the Poisson deviance for the val set
     }
-    breakpoint()
+    # breakpoint()
     if cfg.wandb.enabled:
-        breakpoint()
+        # breakpoint()
         wandb.log({
             "val/mae":              val_metrics["val_mae"],
             "val/rmse":             val_metrics["val_rmse"],
             "val/poisson_deviance": val_metrics["val_poisson_deviance"],
         })
-    breakpoint()
+    # breakpoint()
     # Weather temporal range (from the full buffer series, not the pothole window)
     wx_start = pd.to_datetime(weather_df["date"].min()).strftime("%Y%m%d")
     wx_end   = pd.to_datetime(weather_df["date"].max()).strftime("%Y%m%d")
     wx_range = f"{wx_start}_{wx_end}"
-    breakpoint()
+    # breakpoint()
     metrics = {**cv_metrics, **val_metrics, "run_id": run_id, "wx_range": wx_range}
 
     if cfg.wandb.enabled and wandb_run is not None:
         metrics["wandb_run_id"] = wandb_run.id
-    breakpoint()
+    # breakpoint()
     stem = f"{cfg.ward.name}_{model.name}_{wx_range}_{run_id}"
     model_path, run_cfg_path = save_model(
         model, cfg.features, feature_cols, stem, run_id, wx_range, cfg,

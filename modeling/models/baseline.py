@@ -22,7 +22,7 @@ class SeasonalNaive:
         self._mean_y = float(y.mean())
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
+    def predict(self, X: pd.DataFrame, **kwargs) -> np.ndarray:
         if self._mean_y is None:
             raise RuntimeError("Call fit() before predict().")
         return np.full(len(X), self._mean_y)
