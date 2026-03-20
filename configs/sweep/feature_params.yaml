@@ -36,5 +36,5 @@ parameters:
     max: 10
   k_AR:
     distribution: int_uniform
-    min: 1
+    min: 0
     max: 10
