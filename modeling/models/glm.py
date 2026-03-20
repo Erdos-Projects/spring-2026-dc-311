@@ -71,3 +71,21 @@ class NegBinGLM:
 
     def summary(self):
         return self._result.summary() if self._result else None
+
+class PoissonGLM(NegBinGLM):
+    """
+    Poisson GLM for count data.
+    """
+
+    name = "poisson_glm"
+
+    def fit(self, X: pd.DataFrame, y: pd.Series) -> "NegBinGLM":
+        import statsmodels.api as sm
+
+        self._feature_names = list(X.columns)
+        X_const = sm.add_constant(X.astype(float), has_constant="add")
+        y_arr = y.astype(float).values
+        self._result = sm.GLM(
+            y_arr, X_const, family=sm.families.Poisson()
+        ).fit(disp=0)
+        return self

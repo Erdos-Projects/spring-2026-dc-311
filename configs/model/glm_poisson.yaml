@@ -1,0 +1,3 @@
+_target_: modeling.models.glm.PoissonGLM
+name: poisson_glm
+alpha: 1.0
