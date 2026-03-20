@@ -9,7 +9,7 @@ metric:
 
 parameters:
   d:
-    value: 7
+    value: 1
   d_p:
     distribution: int_uniform
     min: 7
