@@ -245,7 +245,7 @@ def train(cfg: DictConfig) -> dict:
     if cfg.wandb.enabled and wandb_run is not None:
         metrics["wandb_run_id"] = wandb_run.id
     # breakpoint()
-    stem = f"{cfg.ward.name}_{model.name}_{wx_range}_{run_id}"
+    stem = f"{cfg.ward.name}_{cfg.model.name}_{wx_range}_{run_id}"
     model_path, run_cfg_path = save_model(
         model, cfg.features, feature_cols, stem, run_id, wx_range, cfg,
         wandb_run_id=metrics.get("wandb_run_id"),

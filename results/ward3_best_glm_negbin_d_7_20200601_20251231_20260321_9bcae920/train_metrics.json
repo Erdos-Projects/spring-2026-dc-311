@@ -1,0 +1,14 @@
+{
+  "cv_mae": 4.483560422420269,
+  "cv_rmse": 6.187145920152032,
+  "cv_poisson_deviance": 3.36970302333879,
+  "cv_mae_std": 1.371232422700009,
+  "cv_rmse_std": 1.9158019472218908,
+  "cv_poisson_deviance_std": 1.2769458631955406,
+  "val_mae": 5.462865995698021,
+  "val_rmse": 9.150241509279184,
+  "val_poisson_deviance": 3.797998500493562,
+  "run_id": "20260321_9bcae920",
+  "wx_range": "20200601_20251231",
+  "wandb_run_id": "9bcae920"
+}

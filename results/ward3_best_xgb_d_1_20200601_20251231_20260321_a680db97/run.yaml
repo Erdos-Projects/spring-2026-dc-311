@@ -1,0 +1,41 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+features:
+  d: 1
+  d_f: 21
+  d_p: 8
+  d_s: 8
+  k_AR: 8
+  l_f: 1
+  l_p: 9
+  l_s: 7
+load_model: null
+model:
+  _target_: modeling.models.gbm.XGBModel
+  learning_rate: 0.05
+  max_depth: 6
+  n_estimators: 300
+  name: best_xgb_d_1
+  objective: count:poisson
+model_name: xgb
+model_path: results/ward3_best_xgb_d_1_20200601_20251231_20260321_a680db97/model.pkl
+root: .
+run_id: 20260321_a680db97
+split:
+  method: temporal
+  test_frac: 0.15
+  val_frac: 0.15
+wandb:
+  enabled: true
+  entity: ssule25-university-of-maryland
+  project: DC-311-Pothole-Prediction
+wandb_run_id: a680db97
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20210101_20251231.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20200601_20251231.parquet
+wx_range: '20200601_20251231'

@@ -1,0 +1,38 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+features:
+  d: 5
+  d_f: 11
+  d_p: 9
+  d_s: 17
+  k_AR: 0
+  l_f: 10
+  l_p: 6
+  l_s: 9
+load_model: null
+model:
+  _target_: modeling.models.glm.NegBinGLM
+  alpha: 1.0
+  name: best_glm_negbin_d_5
+model_name: negbin_glm
+model_path: results/ward3_best_glm_negbin_d_5_20200601_20251231_20260321_6945181a/model.pkl
+root: .
+run_id: 20260321_6945181a
+split:
+  method: temporal
+  test_frac: 0.15
+  val_frac: 0.15
+wandb:
+  enabled: true
+  entity: ssule25-university-of-maryland
+  project: DC-311-Pothole-Prediction
+wandb_run_id: 6945181a
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20210101_20251231.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20200601_20251231.parquet
+wx_range: '20200601_20251231'

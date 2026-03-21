@@ -17,3 +17,15 @@ def poisson_deviance(y_true, y_pred) -> float:
     log_term = np.zeros_like(y_true)
     log_term[mask] = y_true[mask] * np.log(y_true[mask] / y_pred[mask])
     return float(2.0 * np.mean(log_term - (y_true - y_pred)))
+
+def relative_mae(y_true, y_pred) -> float:
+    y_true = np.array(y_true, dtype=float)
+    y_pred = np.array(y_pred, dtype=float)
+    y_true, y_pred = y_true[y_true > 1e-6], y_pred[y_true > 1e-6] # Filter out near-zero true values to avoid division by zero and extreme relative errors
+    return float(np.mean(np.abs(y_true - y_pred) / (np.abs(y_true) + 1e-8)))
+
+def relative_rmse(y_true, y_pred) -> float:
+    y_true = np.array(y_true, dtype=float)
+    y_pred = np.array(y_pred, dtype=float)
+    y_true, y_pred = y_true[y_true > 1e-6], y_pred[y_true > 1e-6] # Filter out near-zero true values to avoid division by zero and extreme relative errors
+    return float(np.sqrt(np.mean(((y_true - y_pred) / (np.abs(y_true) + 1e-8)) ** 2)))
