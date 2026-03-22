@@ -104,7 +104,18 @@ We comment on the limitations of this process in the limitations section below, 
 
 #### 2a. Feature generation
 
-In order to build features from the weather data using the lagged and rolling transformations, we write a flexible feature assembly function that takes in the raw weather data and applies the specified rolling and lag parameters to create the `precip_roll`, `snow_roll`, and `ftc_roll` features. This function is designed to be modular, allowing for easy experimentation with different parameter values during the EDA phase. The core logic of this feature generation process is encapsulated in the `assemble_features` function within `modeling/features.py`.
+In order to build features from the weather data using the lagged and rolling transformations, we write a flexible feature assembly function that takes in the raw weather data and applies the specified rolling and lag parameters to create the `precip_roll`, `snow_roll`, and `ftc_roll` features. This function is designed to be modular, allowing for easy experimentation with different parameter values during the EDA phase. The core logic of this feature generation process is encapsulated in the `assemble_features` function within `modeling/features.py`. We also include time series features using a trigonometric encoding of the day of year and day of week indicators, which are implemented in `modeling/data/master.py` as part of the daily feature building process. We also aimed to make our models autoregressive--i.e to use past counts to predict the current counts. We discuss the issues with data leakage and the approach we took to mitigate it in the section below. Our models therefore predict the $d$-day cumulative count of pothole requests $Y^{d}_{t}$ at date $t$, using weather features $X_{t}$, temporal features $\tau_{t}$ and past values of the target variable $Y^{d}_{t-1}, Y^{d}_{t-2}, ..., Y^{d}_{t-k_{AR}}$ as inputs.
+ 
+### 3. Modeling and model selection 
+
+We consider three main families of models for forecasting pothole requests:
+1. Generalized Linear Models (GLMs) for count data, including Poisson and Negative
+Binomial variants.
+2. XGBoost with a Poisson objective
+3. A hybrid XGB-SARIMA model that combines the strengths of both approaches
+
+Note that the XGBoost and GLMs are designed to use both the engineered weather features and the seasonal/date features, 
+
 #### 2a) Grid-based optimization over $d$ and lag/window hyperparameters
 EDA sweep notebook:
 - `eda_feature_params.ipynb`
