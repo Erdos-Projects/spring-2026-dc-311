@@ -3,23 +3,23 @@ debug:
   inspect: null
   verbose: false
 features:
-  d: 5
-  d_f: 9
+  d: 1
+  d_f: 15
   d_p: 15
-  d_s: 20
+  d_s: 15
   k_AR: 0
-  l_f: 8
+  l_f: 0
   l_p: 10
-  l_s: 10
+  l_s: 0
 load_model: null
 model:
   _target_: modeling.models.glm.PoissonGLM
   alpha: 1.0
   name: best_glm_poisson_d_1
 model_name: poisson_glm
-model_path: results/ward3_best_glm_poisson_d_1_20200601_20251231_20260321_957499e7/model.pkl
+model_path: results/ward3_best_glm_poisson_d_1_20200601_20251231_20260322_55841fd0/model.pkl
 root: .
-run_id: 20260321_957499e7
+run_id: 20260322_55841fd0
 split:
   method: temporal
   test_frac: 0.15
@@ -28,7 +28,7 @@ wandb:
   enabled: true
   entity: ssule25-university-of-maryland
   project: DC-311-Pothole-Prediction
-wandb_run_id: 957499e7
+wandb_run_id: 55841fd0
 ward:
   name: ward3
   raw_311:
