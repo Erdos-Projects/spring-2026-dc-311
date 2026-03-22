@@ -7,6 +7,7 @@ Returns a tuple (pothole_df, weather_df):
                   Analysis window only (2023-01-01 → 2023-12-31).
 
     weather_df  – date, daily_precip, daily_snow, daily_ftc,
+                  optional soil-moisture dailies, daily_temp_range_c,
                   sin_doy, cos_doy, is_weekend, dow_Mon … dow_Sat.
                   Covers the full hourly-data range (including the
                   pre-analysis buffer) so that rolling lookback features
@@ -26,6 +27,13 @@ import pandas as pd
 from omegaconf import DictConfig
 
 from modeling.data.load import load_311, load_weather
+
+# Hourly Open-Meteo column names → stable daily column names in ``weather_df``.
+SOIL_API_TO_DAILY = {
+    "soil_moisture_0_to_7cm": "daily_soil_0_7",
+    "soil_moisture_7_to_28cm": "daily_soil_7_28",
+    "soil_moisture_28_to_100cm": "daily_soil_28_100",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -104,18 +112,21 @@ def _aggregate_to_daily(df_hourly: pd.DataFrame) -> pd.DataFrame:
     else:
         raise KeyError("Hourly weather must have 'snow_depth' or 'snowfall' column")
 
-    daily = (
-        df_hourly.resample("D", on="date")
-        .agg(
-            tmax_c=("temperature_2m", "max"),
-            tmin_c=("temperature_2m", "min"),
-            tmean_c=("temperature_2m", "mean"),
-            precip_mm=("precipitation", "sum"),
-            snow_cm=snow_agg,
-        )
-        .reset_index()
-    )
+    agg_dict = {
+        "tmax_c": ("temperature_2m", "max"),
+        "tmin_c": ("temperature_2m", "min"),
+        "tmean_c": ("temperature_2m", "mean"),
+        "precip_mm": ("precipitation", "sum"),
+        "snow_cm": snow_agg,
+    }
+    for api_name, daily_name in SOIL_API_TO_DAILY.items():
+        if api_name in df_hourly.columns:
+            agg_dict[daily_name] = (api_name, "mean")
+
+    daily = df_hourly.resample("D", on="date").agg(**agg_dict).reset_index()
     daily["date"] = daily["date"].dt.date
+    daily["daily_temp_range_c"] = daily["tmax_c"] - daily["tmin_c"]
+    daily = daily.drop(columns=["tmax_c", "tmin_c", "tmean_c"])
     return daily
 
 
@@ -150,9 +161,12 @@ def build_daily(cfg: DictConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     daily_ftc_dict = compute_daily_ftc(df_hourly)
 
     # Build weather_df — full date range, no pothole data
-    weather_df = df_daily[["date", "precip_mm", "snow_cm"]].rename(
-        columns={"precip_mm": "daily_precip", "snow_cm": "daily_snow"}
-    ).copy()
+    rename_map = {"precip_mm": "daily_precip", "snow_cm": "daily_snow"}
+    take = ["date", "precip_mm", "snow_cm", "daily_temp_range_c"]
+    for soil_daily in SOIL_API_TO_DAILY.values():
+        if soil_daily in df_daily.columns:
+            take.append(soil_daily)
+    weather_df = df_daily[take].rename(columns=rename_map).copy()
     weather_df["daily_ftc"] = weather_df["date"].map(lambda d: daily_ftc_dict.get(d, 0))
 
     # Calendar features on full range

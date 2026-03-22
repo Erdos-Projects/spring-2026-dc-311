@@ -5,7 +5,14 @@
   "api_url": "https://archive-api.open-meteo.com/v1/archive",
   "start_date": "2022-12-01",
   "end_date": "2023-12-31",
-  "variables": ["temperature_2m", "precipitation", "snow_depth"],
+  "variables": [
+    "temperature_2m",
+    "precipitation",
+    "snow_depth",
+    "soil_moisture_0_to_7cm",
+    "soil_moisture_7_to_28cm",
+    "soil_moisture_28_to_100cm"
+  ],
   "timezone": "America/New_York",
   "latitude_source": "mean LATITUDE of all Ward 1 service requests in All_Service_Requests_-_2023.csv",
   "longitude_source": "mean LONGITUDE of all Ward 1 service requests in All_Service_Requests_-_2023.csv",

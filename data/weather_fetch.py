@@ -22,6 +22,18 @@ import requests_cache
 from retry_requests import retry
 
 
+API_URL = "https://archive-api.open-meteo.com/v1/archive"
+DEFAULT_VARIABLES = [
+    "temperature_2m",
+    "precipitation",
+    "snow_depth",
+    "soil_moisture_0_to_7cm",
+    "soil_moisture_7_to_28cm",
+    "soil_moisture_28_to_100cm",
+]
+DEFAULT_TIMEZONE = "America/New_York"
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -151,6 +163,14 @@ def load_or_fetch(
     )
     df, meta = load_weather(label, cache_dir)
 
+    cfg_vars = config.get("variables", DEFAULT_VARIABLES)
+    if df is not None:
+        if meta.get("variables") != cfg_vars:
+            print(
+                "Cached parquet was built with a different `variables` list than this config.\n"
+                "  Refetching from the Open-Meteo API …"
+            )
+            df = None
     if df is not None:
         stale_keys = [k for k in ("start_date", "end_date")
                       if meta.get(k) != config.get(k)]
@@ -168,7 +188,9 @@ def load_or_fetch(
         return df, meta
 
     print("No cache found — fetching from Open-Meteo API ...")
-    df = get_hourly_weather(lat, lon, config["start_date"], config["end_date"])
+    df = get_hourly_weather(
+        lat, lon, config["start_date"], config["end_date"], variables=cfg_vars
+    )
 
     metadata = {**config, "label": label, "latitude": lat, "longitude": lon}
     save_weather(df, metadata, cache_dir)
@@ -184,10 +206,11 @@ def get_hourly_weather(
     lon: float,
     start_date: str,
     end_date: str,
+    variables: list[str] | None = None,
 ) -> pd.DataFrame:
     """
-    Fetch hourly temperature_2m, precipitation, and snow_depth from the
-    Open-Meteo archive API for the given coordinates and date range.
+    Fetch hourly fields from the Open-Meteo archive API for the given
+    coordinates and date range.
 
     Parameters
     ----------
@@ -197,13 +220,18 @@ def get_hourly_weather(
         ISO date strings (YYYY-MM-DD).  Set start_date one month before the
         analysis window to ensure rolling lookback features have full context
         for early January.
+    variables : list[str] | None
+        Open-Meteo ``hourly`` variable names.  Defaults to ``DEFAULT_VARIABLES``.
 
     Returns
     -------
     pd.DataFrame
-        Hourly rows with columns: date (America/New_York tz-aware),
-        temperature_2m (°C), precipitation (mm), snow_depth (m).
+        Hourly rows with a tz-aware ``date`` column (America/New_York) plus
+        one column per requested variable (units per Open-Meteo docs).
     """
+    if variables is None:
+        variables = list(DEFAULT_VARIABLES)
+
     cache_session = requests_cache.CachedSession(".cache", expire_after=-1)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
@@ -213,7 +241,7 @@ def get_hourly_weather(
         "longitude":  lon,
         "start_date": start_date,
         "end_date":   end_date,
-        "hourly":     ["temperature_2m", "precipitation", "snow_depth"],
+        "hourly":     variables,
         "timezone":   "America/New_York",
     }
     response = openmeteo.weather_api(
@@ -222,29 +250,26 @@ def get_hourly_weather(
 
     hourly = response.Hourly()
     # Convert UTC epoch → America/New_York timestamps (preserves DST transitions).
-    df = pd.DataFrame(
-        {
-            "date": pd.date_range(
-                start=pd.to_datetime(hourly.Time(), unit="s", utc=True).tz_convert("America/New_York"),
-                end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True).tz_convert("America/New_York"),
-                freq=pd.Timedelta(seconds=hourly.Interval()),
-                inclusive="left",
-            ),
-            "temperature_2m": hourly.Variables(0).ValuesAsNumpy(),
-            "precipitation":  hourly.Variables(1).ValuesAsNumpy(),
-            "snow_depth":     hourly.Variables(2).ValuesAsNumpy(),
-        }
+    ts = pd.date_range(
+        start=pd.to_datetime(hourly.Time(), unit="s", utc=True).tz_convert("America/New_York"),
+        end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True).tz_convert("America/New_York"),
+        freq=pd.Timedelta(seconds=hourly.Interval()),
+        inclusive="left",
     )
-    return df
+    n = getattr(hourly, "VariablesLength", lambda: len(variables))()
+    if n != len(variables):
+        raise RuntimeError(
+            f"API returned {n} hourly variables but {len(variables)} were requested."
+        )
+    cols = {"date": ts}
+    for i, name in enumerate(variables):
+        cols[name] = hourly.Variables(i).ValuesAsNumpy()
+    return pd.DataFrame(cols)
 
 
 # ---------------------------------------------------------------------------
 # Data-acquisition helpers (config authoring + API fetch)
 # ---------------------------------------------------------------------------
-
-API_URL           = "https://archive-api.open-meteo.com/v1/archive"
-DEFAULT_VARIABLES = ["temperature_2m", "precipitation", "snow_depth"]
-DEFAULT_TIMEZONE  = "America/New_York"
 
 
 def write_query_config(
@@ -282,8 +307,8 @@ def write_query_config(
     timezone : str
         IANA timezone string passed to the Open-Meteo API.
     variables : list[str] | None
-        Hourly variables to request.  Defaults to
-        ``["temperature_2m", "precipitation", "snow_depth"]``.
+        Hourly variables to request.  Defaults to ``DEFAULT_VARIABLES``
+        (includes ERA5 soil layers and core fields).
 
     Returns
     -------
@@ -363,18 +388,28 @@ def fetch_and_save(
     # Ensure label follows the canonical convention
     config["label"] = _derive_label(config["ward"], config["start_date"], config["end_date"])
 
+    cfg_vars = config.get("variables", DEFAULT_VARIABLES)
+
     if not force:
         df, meta = load_weather(config["label"], cache_dir)
         if df is not None:
-            print(f"Cache hit — loaded {os.path.join(cache_dir, config['label'] + '.parquet')}")
-            print(f"  Saved at: {meta.get('saved_at', 'unknown')}")
-            return df, meta
+            if meta.get("variables") != cfg_vars:
+                print(
+                    "Cache variables differ from config — re-fetching "
+                    f"({config['label']})."
+                )
+            else:
+                print(f"Cache hit — loaded {os.path.join(cache_dir, config['label'] + '.parquet')}")
+                print(f"  Saved at: {meta.get('saved_at', 'unknown')}")
+                return df, meta
 
     print(f"Fetching from Open-Meteo API for {config.get('ward', config['label'])} …")
     print(f"  Coordinates : ({lat}, {lon})")
     print(f"  Date range  : {config['start_date']} → {config['end_date']}")
 
-    df = get_hourly_weather(lat, lon, config["start_date"], config["end_date"])
+    df = get_hourly_weather(
+        lat, lon, config["start_date"], config["end_date"], variables=cfg_vars
+    )
 
     metadata = {**config, "latitude": lat, "longitude": lon}
     save_weather(df, metadata, cache_dir)

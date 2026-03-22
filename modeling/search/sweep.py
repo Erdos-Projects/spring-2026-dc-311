@@ -38,7 +38,12 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
     pothole_df, weather_df = build_daily(cfg)
     print(f"[{agent_label}] Data loaded. Joining sweep {sweep_id} …")
 
-    feature_names = ["d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f", "k_AR"]
+    feature_names = [
+        "d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f",
+        "d_sm07", "l_sm07", "d_sm728", "l_sm728", "d_sm28100", "l_sm28100",
+        "d_tr", "l_tr",
+        "k_AR",
+    ]
     # breakpoint()
     def trial():
         with wandb.init() as run:

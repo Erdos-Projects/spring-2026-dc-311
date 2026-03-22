@@ -34,6 +34,38 @@ parameters:
     distribution: int_uniform
     min: 1
     max: 10
+  d_sm07:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_sm07:
+    distribution: int_uniform
+    min: 0
+    max: 10
+  d_sm728:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_sm728:
+    distribution: int_uniform
+    min: 0
+    max: 10
+  d_sm28100:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_sm28100:
+    distribution: int_uniform
+    min: 0
+    max: 10
+  d_tr:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_tr:
+    distribution: int_uniform
+    min: 0
+    max: 10
   k_AR:
     distribution: int_uniform
     min: 0

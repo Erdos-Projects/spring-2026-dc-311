@@ -40,13 +40,17 @@ def assemble_features(
         date, daily_precip, daily_snow, daily_ftc, sin_doy, cos_doy,
         is_weekend, dow_Mon … dow_Sat.
     cfg_features : DictConfig | dict | SimpleNamespace
-        Feature parameters: d, d_p, l_p, d_s, l_s, d_f, l_f, k_AR.
+        Feature parameters: d, d_p, l_p, d_s, l_s, d_f, l_f, k_AR, and
+        optional d_sm07, l_sm07, d_sm728, l_sm728, d_sm28100, l_sm28100,
+        d_tr, l_tr (soil layers and daily temperature range; defaults match
+        snow lag/window if omitted).
 
     Returns
     -------
     pd.DataFrame
         One row per *usable* day (NaN rows dropped), with columns:
         date, Y, precip_roll, snow_roll, ftc_roll,
+        optional soil / temp-range rolls,
         pothole_lag1 … pothole_lag{k_AR},
         sin_doy, cos_doy, is_weekend, dow_Mon … dow_Sat.
     """
@@ -59,13 +63,34 @@ def assemble_features(
     d_f  = int(p.d_f)
     l_f  = int(p.l_f)
     k_AR = int(p.k_AR)
+    d_sm07    = int(getattr(p, "d_sm07", 15))
+    l_sm07    = int(getattr(p, "l_sm07", 0))
+    d_sm728   = int(getattr(p, "d_sm728", 15))
+    l_sm728   = int(getattr(p, "l_sm728", 0))
+    d_sm28100 = int(getattr(p, "d_sm28100", 15))
+    l_sm28100 = int(getattr(p, "l_sm28100", 0))
+    d_tr      = int(getattr(p, "d_tr", 15))
+    l_tr      = int(getattr(p, "l_tr", 0))
 
     # ── Weather rolling features (computed on full range for Dec context) ─────
     w = weather_df.copy()
     w["precip_roll"] = w["daily_precip"].rolling(d_p).sum().shift(l_p)
     w["snow_roll"]   = w["daily_snow"].rolling(d_s).mean().shift(l_s)
     w["ftc_roll"]    = w["daily_ftc"].rolling(d_f).sum().shift(l_f)
-    w = w.drop(columns=["daily_precip", "daily_snow", "daily_ftc"])
+    if "daily_soil_0_7" in w.columns:
+        w["soil07_roll"] = w["daily_soil_0_7"].rolling(d_sm07).mean().shift(l_sm07)
+    if "daily_soil_7_28" in w.columns:
+        w["soil728_roll"] = w["daily_soil_7_28"].rolling(d_sm728).mean().shift(l_sm728)
+    if "daily_soil_28_100" in w.columns:
+        w["soil28100_roll"] = w["daily_soil_28_100"].rolling(d_sm28100).mean().shift(l_sm28100)
+    if "daily_temp_range_c" in w.columns:
+        w["temp_range_roll"] = w["daily_temp_range_c"].rolling(d_tr).mean().shift(l_tr)
+
+    drop_weather = ["daily_precip", "daily_snow", "daily_ftc"]
+    for c in ("daily_soil_0_7", "daily_soil_7_28", "daily_soil_28_100", "daily_temp_range_c"):
+        if c in w.columns:
+            drop_weather.append(c)
+    w = w.drop(columns=drop_weather)
 
     # Filter to analysis window and merge onto pothole spine
     analysis_start = pothole_df["date"].min()

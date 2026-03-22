@@ -79,7 +79,12 @@ def run_grid(cfg: DictConfig) -> pd.DataFrame:
     grid_cfg = cfg.search
     n_jobs = int(grid_cfg.get("n_jobs", -1))
 
-    param_names = ["d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f", "k_AR"]
+    param_names = [
+        "d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f",
+        "d_sm07", "l_sm07", "d_sm728", "l_sm728", "d_sm28100", "l_sm28100",
+        "d_tr", "l_tr",
+        "k_AR",
+    ]
     candidates = [list(grid_cfg[p]) for p in param_names]
     all_params = [dict(zip(param_names, combo)) for combo in itertools.product(*candidates)]
 
