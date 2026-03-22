@@ -1,200 +1,163 @@
-# DC 311 Pothole Forecasting (Winter Weather)
+# DC 311 Pothole Forecasting
 
-This project models daily DC 311 `Pothole` request counts using exogenous weather variables:
-precipitation, snow depth, and freeze-thaw cycles. The core idea is to build rolling/lagged weather aggregates and learn how they relate to future request counts.
+Potholes are a comon urban infrastructure issue, and timely repair is critical for public safety and satisfaction. The DC 311 service request system provides a rich dataset of pothole reports, which can be used to predict future demand for repairs. This project focuses on forecasting the number of pothole repair requests in Washington, DC using historical 311 data and weather information.
 
-Our main stakeholder is Washington DC’s DDOTs (District Department of Transportation), who want a practical forecast of how many pothole issues may need repair every `d` days. A more accurate short-horizon forecast can improve inventory and staffing decisions and has the potential to save tens of thousands of dollars.
+### Problem Statement
+Given a date $t$, predict the number of pothole requests expected over the next $d$ days using information available up to $t$ (including lagged weather and historical request behavior).
 
-## Problem
-Given a day `t`, predict pothole request counts for the next `d` days using only information available up to `t` (weather features are built from lags). This short-horizon forecast is designed to support DDOTs planning over the next `d` days, with count-appropriate models for overdispersed targets.
+### Primary KPIs and Stakeholders
+- **KPIs**:
+- MAE (mean absolute error)
+- RMSE (root mean squared error)
+- Poisson deviance (count-aware error metric)
+- Correlation between predictions and true counts (used in some EDA/model-comparison workflows)
 
-The pipeline is intentionally “ward-by-ward”: you train a separate model per ward/centroid.
+- **Stakeholders**:
+- DC Department of Public Works (DPW) - for resource allocation and scheduling
+- DC residents - for improved service and communication
+- City planners - for infrastructure maintenance planning
 
-## Data Acquisition
+## Exploratory Data Analysis
 
-### DC 311 service requests
-Data source: DC 311 open data (service-request CSVs).
+### 1. Data Acquisition
 
-We preprocess each CSV by filtering to rows where `SERVICECODEDESCRIPTION == "Pothole"`, keeping the fields:
-`ADDDATE`, `WARD`, `SERVICECODEDESCRIPTION`, `LATITUDE`, `LONGITUDE`.
+We use two primary data sources:
+1. DC 311 service request data (pothole-specific)
+2. Historical weather data from Open-Meteo
 
-Implementation entrypoint:
+The DC 311 data is accessed from the (Open Data DC)[https://opendata.dc.gov/datasets/] portal, which provides annual CSV exports of all service requests. We filter to those with `SERVICECODEDESCRIPTION == "Pothole"` to get the pothole data. We found that the serivce requests baselines differed significantly across wards, leading us to focus on DC's Ward 3, which has the largest number of pothole service requests. 
+
+
+
+We have to additionally bin the counts by day and ward to get the daily pothole service requests counts per ward. 
+#### 1a) 311 CSV data location and `preprocess_311` usage
+Raw DC 311 CSV files are expected as annual exports (for example, in a local `csv_data/` folder or another user-provided path). The preprocessing entrypoint is:
 - `data/preprocess_311.py`
+- function: `preprocess_311(...)`
 
-### Weather (Open-Meteo archive API)
-Data source: Open-Meteo archive API queried for each ward centroid.
+Note: some notes refer to a "process_311" step; in this codebase the implemented function name is `preprocess_311`.
 
-We request hourly:
-- `temperature_2m` (C)
-- `precipitation` (mm)
-- `snow_depth` (cm)
+What it does:
+- reads one or multiple raw CSVs,
+- filters to `SERVICECODEDESCRIPTION == "Pothole"`,
+- validates required columns,
+- writes per-ward parquet files to `data/311_data/`,
+- returns ward centroids for downstream weather querying.
 
-Implementation entrypoints:
-- `data/weather_fetch.py` (API fetch + caching)
-- `modeling/data/master.py`
-  - resamples hourly weather to daily precipitation/snow_depth (mean)
-  - computes daily freeze-thaw cycle counts from hourly temperature
+Example:
+```python
+from data.preprocess_311 import preprocess_311
 
-## Feature Choices (Inductive Biases)
-
-Feature engineering follows the inductive biases suggested by exploratory analysis:
-
-1. **Ward-by-ward modeling** because weather-to-requests relationships vary spatially.
-2. **Noise-robust aggregation**: instead of single-day weather, use accumulated precipitation/snow depth and freeze-thaw cycles over windows.
-3. **Lagged influence**: weather effects are assumed to act with a lag. We aggregate over `d` days ending `l` days before the prediction date.
-
-Exploratory notebook link:
-- `[eda_2017.ipynb](eda_2017.ipynb)`
-
-### Rolling/lagged weather covariates
-In `modeling/features.py`, daily weather covariates are computed as:
-
-- `precip_roll = rolling(d_p).sum().shift(l_p)`
-- `snow_roll   = rolling(d_s).mean().shift(l_s)`  (snow_depth)
-- `ftc_roll    = rolling(d_f).sum().shift(l_f)`
-
-### Freeze-thaw cycle feature
-Freeze-thaw cycles are computed from hourly temperature runs in `modeling/data/master.py`:
-- freeze: `temperature_2m < 0` for at least `min_hours` consecutive hours
-- thaw: `temperature_2m > thaw_thresh` for at least `min_hours` consecutive hours
-- each qualifying F->T sequence is counted on the calendar day the thaw run ends
-
-### Target definition (future counts)
-The modeling target `Y` is built from the daily pothole counts:
-
-`Y_t = sum(pothole_count_{t+1} ... pothole_count_{t+d})`
-
-In code this is implemented as:
-- `df["Y"] = df["pothole_count"].rolling(d).sum().shift(-d)`
-
-Optional autoregressive features:
-- `pothole_lag{k} = pothole_count.shift(k)` for `k=1..k_AR`
-
-### Where zeros come from
-`modeling/data/load.py` zero-fills days with no pothole requests *within the loaded date span*:
-- it builds a full daily calendar between the min and max loaded request dates
-- merges observed daily counts
-- fills missing counts with `0`
-
-## Modeling Choices
-
-This is a time-series prediction problem with exogenous variables (weather features).
-
-Models implemented in the training pipeline:
-
-1. **Negative Binomial GLM** (`negbin_glm`)
-   - `modeling/models/glm.py` (`statsmodels` Negative Binomial with fallback to Poisson)
-2. **Gradient boosting for counts**
-   - XGBoost with Poisson objective (`xgb`)
-   - LightGBM with Poisson objective (`lgbm`)
-   - `modeling/models/gbm.py`
-3. **Seasonal naive baseline**
-   - `modeling/models/baseline.py` (`SeasonalNaive`)
-
-SARIMAX and hybrids:
-- SARIMAX and SARIMAX-style baselines have been explored in notebooks (see `[load_process.ipynb](load_process.ipynb)`), but they are not currently exposed through `modeling/models` / the Hydra model registry.
-- The current training pipeline focuses on GLM/GBM-style models with count objectives.
-
-## Training & Experiment Configuration
-
-The repo uses Hydra for configuration and orchestration.
-
-Key configurable components:
-
-### Ward data sources
-Hydra config controls what to load:
-- `ward.raw_311`: one or more preprocessed per-ward parquet files
-- `ward.weather_cache`: cached weather parquet with hourly weather aggregated later to daily
-
-Important note: if you override configs on the CLI, override the keys actually used by the loaders:
-- weather is loaded from `cfg.ward.weather_cache` (not `cfg.ward.raw_weather`)
-
-### Feature hyperparameters
-Weather aggregation and target horizon are controlled by:
-- `features.d` (forecast horizon in days)
-- `features.d_p`, `features.l_p` (precipitation window + lag)
-- `features.d_s`, `features.l_s` (snow_depth window + lag)
-- `features.d_f`, `features.l_f` (freeze-thaw window + lag)
-- `features.k_AR` (how many autoregressive pothole lags to include)
-
-### Splitting strategy
-Two split strategies are supported in `modeling/split.py`:
-
-1. `configs/split/default.yaml` (random)
-   - stratified by calendar quarter
-2. `configs/split/temporal.yaml` (temporal)
-   - chronological TimeSeriesSplit-style segmentation
-
-Even when using the temporal split, the train/val/test years depend on the ward’s configured data range (see `configs/ward/ward3_2021_2025.yaml`).
-
-### Example configs
-- `configs/first_try.yaml` (quick local example)
-- `configs/ward/ward3_2021_2025.yaml` (ward 3 data span through 2025)
-- `configs/features/default.yaml` (default rolling/lag windows)
-- `configs/split/default.yaml` and `configs/split/temporal.yaml`
-
-## Evaluation
-
-### Metrics
-Implemented in `modeling/metrics.py`:
-
-1. **MAE**: mean absolute error
-2. **RMSE**: root mean squared error
-3. **Poisson deviance**: count loss based on the deviance form
-
-### Evaluation script
-- `modeling/evaluate.py`
-
-### Train/test protocol (typical setup)
-The common experimental intent is:
-- train on years 2021-2024
-- predict/evaluate on 2025
-
-To achieve this behavior, configure:
-- `ward.raw_311` and `ward.weather_cache` to cover the desired date span
-- use `configs/split/temporal.yaml` if you want the held-out segment to be the latest dates
-
-## Engineering & Reproducibility
-
-This repo includes several engineering practices to support experimentation:
-
-1. **Hydra config management**
-   - `@hydra.main` in `modeling/train.py` / `modeling/evaluate.py`
-2. **Experiment tracking with W&B**
-   - `wandb.enabled` toggles logging
-3. **Hyperparameter search**
-   - Phase 1: exhaustive grid search (`modeling/search/grid.py`)
-   - Phase 2: Bayesian search via Optuna (`modeling/search/bayes.py`)
-4. **Python project setup via `pyproject.toml`**
-
-Artifacts:
-- training writes model + run configuration into `results/{stem}/` (see `modeling/train.py`)
-- evaluation writes metrics and diagnostic plots into the corresponding `results/{stem}/`
-
-## Data Flow
-
-```mermaid
-flowchart LR
-  subgraph Data
-    CSV[DC311 CSVs] --> Preprocess[data/preprocess_311.py]
-    Preprocess --> WardParquet[Per-ward pothole parquet]
-    OpenMeteo[Open-Meteo API] --> WeatherFetch[data/weather_fetch.py]
-    WeatherFetch --> WeatherParquet[Hourly weather parquet]
-  end
-  subgraph Modeling
-    Load311[modeling/data/load.py: load_311] --> DailyPothole[Daily pothole counts (zero-filled)]
-    BuildDaily[modeling/data/master.py: build_daily] --> DailyWeather[Daily weather + ftc]
-    Assemble[modeling/features.py: assemble_features] --> FeatureMatrix[Feature matrix + target Y]
-    Train[modeling/train.py] --> Model[Trained model]
-    Eval[modeling/evaluate.py] --> Metrics[MAE/RMSE/Poisson deviance]
-  end
+out = preprocess_311(
+    raw_csv=[
+        "csv_data/All_Service_Requests_-_2021.csv",
+        "csv_data/311_City_Service_Requests_in_2022.csv",
+        "csv_data/All_Service_Requests_-_2023.csv",
+    ],
+    out_dir="data/311_data",
+)
 ```
 
-## Quickstart
+#### 1b) Weather API retrieval and scraping (query-config writing)
+Weather data comes from the Open-Meteo archive API via:
+- `data/weather_fetch.py`
 
-### Train a model (Ward 3 example)
-Use the correct config keys: `ward.raw_311` and `ward.weather_cache`.
+Key public helpers:
+- `write_query_config(...)`: writes query JSON into `data/weather_query_configs/`
+- `fetch_and_save(...)`: fetches hourly weather and stores parquet/metadata in `data/weather_cache/`
 
+Example:
+```python
+from data.weather_fetch import write_query_config, fetch_and_save
+
+cfg_path = write_query_config(
+    ward="Ward 3",
+    lat=38.92,
+    lon=-77.08,
+    start_date="2020-12-01",  # buffer period for lag features
+    end_date="2025-12-31",
+    configs_dir="data/weather_query_configs",
+)
+
+df_hourly, meta = fetch_and_save(
+    cfg_path,
+    cache_dir="data/weather_cache",
+    force=False,
+)
+```
+
+#### 1c) Rolling and lagged feature implementation
+Rolling and lagged weather features are implemented in:
+- `modeling/features.py` (`assemble_features`)
+
+Core transforms:
+- `precip_roll = rolling(d_p).sum().shift(l_p)`
+- `snow_roll   = rolling(d_s).mean().shift(l_s)`
+- `ftc_roll    = rolling(d_f).sum().shift(l_f)`
+
+Daily weather and seasonal/date features are prepared in:
+- `modeling/data/master.py` (`build_daily`)
+
+Freeze-thaw counts are built from hourly runs, then aggregated daily.
+
+### 2. Data Exploration
+
+#### 2a) Grid-based optimization over $d$ and lag/window hyperparameters
+EDA sweep notebook:
+- `eda_feature_params.ipynb`
+
+It performs a grid sweep over:
+- `d in {1,3,5,7}`
+- weather window/lag params (`d_p,l_p,d_s,l_s,d_f,l_f`)
+- fixed `k_AR=0` in that notebook
+
+Selection rule in the notebook:
+- compute correlations of `precip_roll`, `snow_roll`, `ftc_roll` with target `Y`
+- rank by mean absolute correlation
+- choose best parameter combo per `d`
+
+Training-time exhaustive grid search (pipeline version):
+- `modeling/search/grid.py`
+- config: `configs/search/grid.yaml`
+
+#### 2b) Correlation-lag discovery
+Correlation-driven lag analysis appears in:
+- `eda.ipynb` (Pearson heatmap for daily pothole/weather signals)
+- `eda_feature_params.ipynb` (systematic lag/window sweep)
+
+The workflow checks whether same-day weather is predictive or whether lagged/aggregated weather better aligns with pothole counts.
+
+### 3. Feature Selection
+Selected/engineered features include:
+
+#### 3a) Lagged weather + rolling aggregates
+- `precip_roll`, `snow_roll`, `ftc_roll`
+- controlled by (`d_p,l_p,d_s,l_s,d_f,l_f`)
+
+#### 3b) Seasonal and calendar features
+From `modeling/data/master.py`:
+- `sin_doy`, `cos_doy` (day-of-year cyclic encoding)
+- day-of-week indicators (`dow_Mon` ... `dow_Sat`)
+
+#### 3c) Weekend one-hot/binary signal
+- `is_weekend` is explicitly included as a binary weekend feature.
+
+## Modeling
+
+### Three implemented model families
+1. GLM for counts
+   - `modeling/models/glm.py`
+   - supports Poisson GLM and Negative Binomial GLM behavior
+2. XGBoost with Poisson objective
+   - `modeling/models/gbm.py` (`XGBModel`)
+3. XGB-SARIMAX hybrid model
+   - `modeling/models/xgb_sarimax.py`
+
+Model registry/factory:
+- `modeling/models/__init__.py`
+- config targets in `configs/model/*.yaml`
+
+### Training
 ```bash
 python3 -m modeling.train --config-name first_try \
   ++ward.raw_311='data/311_data/ward3_potholes_20210101_20251231.parquet' \
@@ -202,44 +165,49 @@ python3 -m modeling.train --config-name first_try \
   wandb.enabled=false
 ```
 
-### Evaluate a trained run
-`modeling/train.py` prints a `load_model=<stem>` value in the console. Use it for evaluation:
+### Loading and evaluating trained models
+Each run is saved under `results/<stem>/` with:
+- `model.pkl`
+- `run.yaml`
+- training/evaluation metric files
 
+Recommended loading path:
 ```bash
 python3 -m modeling.evaluate --config-name first_try \
-  load_model=<stem_from_train_output> \
+  load_model=<stem_from_training_output> \
   wandb.enabled=false
 ```
 
-## Hyperparameter Tuning (Optional)
+Manual loading option:
+```python
+import pickle
 
-### Grid search
-```bash
-python3 -m modeling.search.grid --config-name first_try +search=grid \
-  ++ward.raw_311='data/311_data/ward3_potholes_20210101_20251231.parquet' \
-  ++ward.weather_cache='data/weather_cache/weather_ward3_20200601_20251231.parquet' \
-  wandb.enabled=false
+with open("results/<stem>/model.pkl", "rb") as f:
+    saved = pickle.load(f)
+
+model = saved["model"]
+feature_cols = saved["feature_cols"]
+feat_params = saved["feat_params"]
 ```
 
-### Bayesian search
-```bash
-python3 -m modeling.search.bayes --config-name first_try +search=bayes \
-  ++ward.raw_311='data/311_data/ward3_potholes_20210101_20251231.parquet' \
-  ++ward.weather_cache='data/weather_cache/weather_ward3_20200601_20251231.parquet' \
-  wandb.enabled=false
-```
+## Software Engineering Aspects
 
-## Key Files
+### Configuration and reproducibility
+- Hydra-based config composition (`configs/` hierarchy)
+- deterministic split configuration (`modeling/split.py`)
+- run artifacts persisted in `results/<stem>/`
 
-- Data preprocessing: `data/preprocess_311.py`
-- Weather fetch + caching: `data/weather_fetch.py`
-- Load daily series: `modeling/data/load.py` (`load_311`)
-- Weather aggregation + ftc: `modeling/data/master.py`
-- Feature engineering + target: `modeling/features.py`
-- Training: `modeling/train.py`
-- Evaluation: `modeling/evaluate.py`
-- Metrics: `modeling/metrics.py`
-- Splits: `modeling/split.py`
-- Models: `modeling/models/*`
-- Hyperparameter search: `modeling/search/*`
+### Modular pipeline design
+- data loading/prep: `modeling/data/`
+- feature assembly: `modeling/features.py`
+- models: `modeling/models/`
+- training/eval entrypoints: `modeling/train.py`, `modeling/evaluate.py`
+- hyperparameter search: `modeling/search/grid.py`, `modeling/search/bayes.py`
 
+### Data provenance and caching
+- weather query specs saved as JSON (`data/weather_query_configs/`)
+- fetched weather cached with metadata (`data/weather_cache/`)
+- 311 preprocessing outputs stored by ward and date range (`data/311_data/`)
+
+### Experiment tracking
+- optional Weights & Biases integration via config (`wandb.enabled`)
