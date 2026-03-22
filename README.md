@@ -22,20 +22,13 @@ Given a date $t$, predict the number of pothole requests expected over the next 
 ### 1. Data Acquisition
 
 We use two primary data sources:
+
 1. DC 311 service request data (pothole-specific)
 2. Historical weather data from Open-Meteo
 
-The DC 311 data is accessed from the (Open Data DC)[https://opendata.dc.gov/datasets/] portal, which provides annual CSV exports of all service requests. We filter to those with `SERVICECODEDESCRIPTION == "Pothole"` to get the pothole data. We found that the serivce requests baselines differed significantly across wards, leading us to focus on DC's Ward 3, which has the largest number of pothole service requests. 
-
-
-
-We have to additionally bin the counts by day and ward to get the daily pothole service requests counts per ward. 
-#### 1a) 311 CSV data location and `preprocess_311` usage
-Raw DC 311 CSV files are expected as annual exports (for example, in a local `csv_data/` folder or another user-provided path). The preprocessing entrypoint is:
+The DC 311 data is accessed from the (Open Data DC)[https://opendata.dc.gov/datasets/] portal, which provides annual CSV exports of all service requests. We filter to those with `SERVICECODEDESCRIPTION == "Pothole"` to get the pothole data. We found that the serivce requests baselines differed significantly across wards, leading us to focus on DC's Ward 3, which has the largest number of pothole service requests. Raw DC 311 CSV files are expected as annual exports (for example, in a local `csv_data/` folder or another user-provided path). The preprocessing entrypoint is:
 - `data/preprocess_311.py`
 - function: `preprocess_311(...)`
-
-Note: some notes refer to a "process_311" step; in this codebase the implemented function name is `preprocess_311`.
 
 What it does:
 - reads one or multiple raw CSVs,
@@ -58,18 +51,18 @@ out = preprocess_311(
 )
 ```
 
-#### 1b) Weather API retrieval and scraping (query-config writing)
-Weather data comes from the Open-Meteo archive API via:
-- `data/weather_fetch.py`
+For the weather data, we use the Open-Meteo archive API to retrieve historical hourly weather data for the relevant locations and time periods. Since we are interested in the cumulative effect of weather conditions over time, we aggregate the hourly data into daily features. Moreover, we query the weather for the geographical centroid of the ward, which is computed as part of the output of `preprocess_311.py`. The historical weather API allows for the extraction of various weather variables--we extract precipitation, snowfall, and freeze-thaw counts, which are commonly associated with pothole formation and repair demand. The weather retrieval process is designed to be modular and reusable, with query specifications saved as JSON files for reproducibility and caching of results to avoid redundant API calls. A minimal working code snippet is below: 
 
-Key public helpers:
-- `write_query_config(...)`: writes query JSON into `data/weather_query_configs/`
-- `fetch_and_save(...)`: fetches hourly weather and stores parquet/metadata in `data/weather_cache/`
-
-Example:
 ```python
 from data.weather_fetch import write_query_config, fetch_and_save
-
+out = preprocess_311(
+    raw_csv=[
+        "csv_data/All_Service_Requests_-_2021.csv",
+        "csv_data/311_City_Service_Requests_in_2022.csv",
+        "csv_data/All_Service_Requests_-_2023.csv",
+    ],
+    out_dir="data/311_data",
+)
 cfg_path = write_query_config(
     ward="Ward 3",
     lat=38.92,
@@ -78,7 +71,6 @@ cfg_path = write_query_config(
     end_date="2025-12-31",
     configs_dir="data/weather_query_configs",
 )
-
 df_hourly, meta = fetch_and_save(
     cfg_path,
     cache_dir="data/weather_cache",
@@ -86,7 +78,7 @@ df_hourly, meta = fetch_and_save(
 )
 ```
 
-#### 1c) Rolling and lagged feature implementation
+### 1c) Rolling and lagged feature implementation
 Rolling and lagged weather features are implemented in:
 - `modeling/features.py` (`assemble_features`)
 
@@ -102,6 +94,17 @@ Freeze-thaw counts are built from hourly runs, then aggregated daily.
 
 ### 2. Data Exploration
 
+Once the data has been loaded, we engineer the features. In particular, we find that the choice of lag and window parameters for the rolling weather features has a significant impact on their correlation with the target pothole counts. To systematically explore this, we perform two types of analyses:
+
+1. Grid-based optimization over a range of lag and window parameters to identify which combinations yield the strongest mean absolute correlation with the target variable.
+
+2. Correlation-lag discovery to understand the temporal relationship between weather conditions and pothole requests, checking whether same-day weather is predictive or whether lagged/aggregated weather better aligns with pothole counts.
+
+We comment on the limitations of this process in the limitations section below, but it serves as a critical step in guiding our feature selection and engineering for the modeling phase.
+
+#### 2a. Feature generation
+
+In order to build features from the weather data using the lagged and rolling transformations, we write a flexible feature assembly function that takes in the raw weather data and applies the specified rolling and lag parameters to create the `precip_roll`, `snow_roll`, and `ftc_roll` features. This function is designed to be modular, allowing for easy experimentation with different parameter values during the EDA phase. The core logic of this feature generation process is encapsulated in the `assemble_features` function within `modeling/features.py`.
 #### 2a) Grid-based optimization over $d$ and lag/window hyperparameters
 EDA sweep notebook:
 - `eda_feature_params.ipynb`
