@@ -28,6 +28,11 @@ To compile and run the code in this repository, you will need to set up a Python
 conda create -n dc_pothole_forecasting -f environment.yaml
 ```
 
+We include a `pyproject.toml` file for compiling this repository as a package so you may make local imports from the `data/` and `modeling/` modules in the Jupyter notebooks. To install the package in editable mode, run:
+
+```bash
+pip install -e .
+```
 Our data is stored in the `data` folder and is available for use. However, if you wish to preprocess the raw DC 311 CSV files yourself, you can place them in a `csv_data/` folder in the repository. The processed data will be saved in `data/311_data/` for downstream use.
 
 ## Exploratory Data Analysis
@@ -154,6 +159,21 @@ The optimal feature engineering hyperparameters identified through Bayesian sear
 
 ![Best hyperparameters, averaged over the models by Model and Forecast Horizon](assets/best_hyperparameters.png)
 
+### Model training process
+
+While we walk through the full training pipeline in [this notebook](4_modeling.ipynb) we use [Hydra](https://hydra.cc/) to manage the many different configurations for data processing, feature engineering, model training, and hyperparameter search. All configurations are stored in the `configs/` directory with a clear hierarchy (for example, `configs/model/` for model-specific configs and `configs/features/` for feature engineering configs). This allows us to easily reproduce experiments and maintain a clear record of the settings used for each run, simplifying model training to a single command. 
+
+```bash
+python3 modeling/train.py
+```
+
+This trains a model and saves it to the results directory using the default parameters in `configs/config.yaml`. If you want to train your own model (say an XGB model with a 3 day autoregressive window), you would run: 
+
+```bash
+python3 modeling/train.py +model=xgb +features.k_AR=3
+```
+
+Look up Hydra override syntax [here](https://hydra.cc/docs/next/advanced/override_grammar/basic) for more details on how to specify different parameters.
 
 ## 4. Model Performance Results
 
@@ -219,75 +239,93 @@ Weather feature coverage is still narrow. This work uses precipitation, snow dep
 ## Software Engineering Aspects
 
 ### Configuration and reproducibility
-- Hydra-based config composition (`configs/` hierarchy)
-- deterministic split configuration (`modeling/split.py`)
-- run artifacts persisted in `results/<stem>/`
+We use hydra-based config composition to keep track of the many different configurations for data processing, feature engineering, model training, and hyperparameter search. All configurations are stored in the `configs/` directory with a clear hierarchy (for example, `configs/model/` for model-specific configs and `configs/features/` for feature engineering configs). This allows us to easily reproduce experiments and maintain a clear record of the settings used for each run.
 
 ### Modular pipeline design
-- data loading/prep: `modeling/data/`
-- feature assembly: `modeling/features.py`
-- models: `modeling/models/`
-- training/eval entrypoints: `modeling/train.py`, `modeling/evaluate.py`
-- hyperparameter search: `modeling/search/grid.py`, `modeling/search/bayes.py`
 
-### Data provenance and caching
-- weather query specs saved as JSON (`data/weather_query_configs/`)
-- fetched weather cached with metadata (`data/weather_cache/`)
-- 311 preprocessing outputs stored by ward and date range (`data/311_data/`)
+We keep the data acquisition code completely separate in `data/`. Once the data is processed, the user can safely switch to machine learning. 
+
+### Scripts for querying the weather API
+
+For the ease of querying the weather API, we provide scripts `data/weather_fetch.py` which includes functions for writing query configurations and fetching/saving weather data based on those configurations. This modular design allows for easy reuse and adaptation of the weather querying process for different locations, time periods, or weather variables. This module is of independent interest to anyone intending to use the Open-Meteo historical weather API for similar applications.
 
 ### Experiment tracking
-- optional Weights & Biases integration via config (`wandb.enabled`)
+- Optional Weights & Biases integration via config (`wandb.enabled`)
 
-## Repository File Organization
+## Repository Organization (Tree)
 
-```mermaid
-flowchart TB
-    root[spring-2026-dc-311]
-
-    root --> notebooks[Notebooks]
-    notebooks --> n1[data_acquisition.ipynb]
-    notebooks --> n2[eda_feature_params.ipynb]
-    notebooks --> n3[load_process.ipynb]
-    notebooks --> n4[modeling.ipynb]
-    notebooks --> n5[model_eva_rong.ipynb]
-    notebooks --> n6[results.ipynb]
-    notebooks --> n7[test.ipynb]
-    notebooks --> n8[weather_integration_2023.ipynb]
-
-    root --> cfg[configs/]
-    cfg --> cfg_main[config.yaml, first_try.yaml, xgb_sarimax_debug.yaml]
-    cfg --> cfg_debug[debug/default.yaml]
-    cfg --> cfg_feat[features/best_* + default.yaml]
-    cfg --> cfg_model[model/baseline.yaml, glm*.yaml, xgb*.yaml, lgbm.yaml]
-    cfg --> cfg_search[search/bayes.yaml, search/grid.yaml]
-    cfg --> cfg_split[split/default.yaml, split/temporal.yaml]
-    cfg --> cfg_sweep[sweep/*, sweep_run/*]
-
-    root --> data[data/]
-    data --> d1[preprocess_311.py]
-    data --> d2[weather_fetch.py]
-    data --> d3[311_data/]
-    data --> d4[weather_cache/]
-    data --> d5[weather_query_configs/]
-
-    root --> mdl[modeling/]
-    mdl --> m1[data/]
-    mdl --> m2[models/]
-    mdl --> m3[search/]
-    mdl --> m4[features.py]
-    mdl --> m5[metrics.py]
-    mdl --> m6[split.py]
-    mdl --> m7[train.py]
-    mdl --> m8[evaluate.py]
-
-    root --> outputs[outputs/]
-    outputs --> o1[YYYY-MM-DD run snapshots]
-
-    root --> results[results/]
-    results --> r1[ward*_best_* run folders]
-    results --> r2[model.pkl + run.yaml + metrics artifacts]
-
-    root --> docs[docs/]
-    root --> meta[README.md, requirements.txt, environment.yml, pyproject.toml]
+```text
+spring-2026-dc-311/
+|-- README.md
+|-- pyproject.toml
+|-- requirements.txt
+|-- environment.yml
+|-- data_acquisition.ipynb
+|-- eda_feature_params.ipynb
+|-- load_process.ipynb
+|-- modeling.ipynb
+|-- model_eva_rong.ipynb
+|-- results.ipynb
+|-- test.ipynb
+|-- weather_integration_2023.ipynb
+|-- assets/
+|   |-- best_hyperparameters.png
+|   |-- poisson_sweep.png
+|-- configs/
+|   |-- config.yaml
+|   |-- first_try.yaml
+|   |-- xgb_sarimax_debug.yaml
+|   |-- debug/
+|   |   `-- default.yaml
+|   |-- features/
+|   |   |-- best_glm_negbin_d_1.yaml
+|   |   |-- best_glm_negbin_d_5.yaml
+|   |   |-- best_glm_negbin_d_7.yaml
+|   |   |-- best_glm_poisson_d_1.yaml
+|   |   |-- best_glm_poisson_d_5.yaml
+|   |   |-- best_glm_poisson_d_7.yaml
+|   |   |-- best_xgb_d_1.yaml
+|   |   |-- best_xgb_d_5.yaml
+|   |   |-- best_xgb_d_7.yaml
+|   |   |-- best_xgb_sarimax_d_1.yaml
+|   |   |-- best_xgb_sarimax_d_5.yaml
+|   |   |-- best_xgb_sarimax_d_7.yaml
+|   |   `-- default.yaml
+|   |-- model/
+|   |   |-- baseline.yaml
+|   |   |-- glm.yaml
+|   |   |-- glm_poisson.yaml
+|   |   |-- lgbm.yaml
+|   |   |-- mymodel.yaml
+|   |   |-- xgb.yaml
+|   |   `-- xgb_sarimax.yaml
+|   |-- search/
+|   |   |-- bayes.yaml
+|   |   `-- grid.yaml
+|   |-- split/
+|   |   |-- default.yaml
+|   |   `-- temporal.yaml
+|   |-- sweep/
+|   `-- sweep_run/
+|-- data/
+|   |-- preprocess_311.py
+|   |-- weather_fetch.py
+|   |-- 311_data/
+|   |-- weather_cache/
+|   `-- weather_query_configs/
+|-- modeling/
+|   |-- __init__.py
+|   |-- evaluate.py
+|   |-- features.py
+|   |-- metrics.py
+|   |-- split.py
+|   |-- train.py
+|   |-- data/
+|   |-- models/
+|   `-- search/
+|-- outputs/
+|-- results/
+`-- docs/
 ```
+
 
