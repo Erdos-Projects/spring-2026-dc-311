@@ -103,7 +103,7 @@ df_hourly, meta = fetch_and_save(
 
 ## 2. Data Exploration
 
-A key driver of pothole formation is the [freeze-thaw cycle](https://cnycentral.com/weather/weather-wisdom/pothole-season-explaining-how-the-weather-plays-a-role-in-creating-fixing-potholes) which accounts for the repeated freezing and melting of water that forms and opens cracks in the pavement. A [memo from the Minnesota department of transportation](https://dot.state.mn.us/mnroad/nrra/structure-teams/geotechnical/files/environmental-impacts-tap-meeting-follow-up-freeze-thaw-cycles-comparison-update.pdf) even specifies how to calculate these freeze thaw cycles using hourly temperatures. We implement this in `modeling/features.py` and encapsulated the general feature generation process in the `assemble_features` function within `modeling/features.py`. We also include time series features using a trigonometric encoding of the day of year and day of week indicators, which are implemented in `modeling/data/master.py` as part of the daily feature building process. We also aimed to make our models autoregressive--i.e to use past counts to predict the current counts. We discuss the issues with data leakage and the approach we took to mitigate it in the section below. Our models therefore predict the $d$-day cumulative count of pothole requests $Y^{d}_{t}$ at date $t$, using weather features $X_{t}$, temporal features $\tau_{t}$ and past values of the target variable $Y^{d}_{t-1}, Y^{d}_{t-2}, ..., Y^{d}_{t-k_{AR}}$ as inputs. In particular, we find that the choice of lag and window parameters for the rolling weather features has a significant impact on their correlation with the target pothole counts. To systematically explore this, we perform a small grid-based optimization over a small grid of lag and window parameters to identify which combinations yield the strongest mean absolute correlation with the target variable.
+A key driver of pothole formation is the [freeze-thaw cycle](https://cnycentral.com/weather/weather-wisdom/pothole-season-explaining-how-the-weather-plays-a-role-in-creating-fixing-potholes) which accounts for the repeated freezing and melting of water that forms and opens cracks in the pavement. A [memo from the Minnesota department of transportation](https://dot.state.mn.us/mnroad/nrra/structure-teams/geotechnical/files/environmental-impacts-tap-meeting-follow-up-freeze-thaw-cycles-comparison-update.pdf) even specifies how to calculate these freeze thaw cycles using hourly temperatures. We implement this in `modeling/features.py` and encapsulated the general feature generation process in the `assemble_features` function within `modeling/features.py`. We also include time series features using a trigonometric encoding of the day of year and day of week indicators, which are implemented in `modeling/data/master.py` as part of the daily feature building process. We find that the choice of lag and window parameters for the rolling weather features has a significant impact on their correlation with the target pothole counts. To systematically explore this, in this [notebook](3_eda.ipynb)we perform a small grid-based optimization over a small grid of lag and window parameters to identify which combinations yield the strongest mean absolute correlation with the target variable.
 
 ![Discovering optimal rolling window size and lag for weather features](assets/lag_discovery.png)
 
@@ -117,8 +117,6 @@ A key driver of pothole formation is the [freeze-thaw cycle](https://cnycentral.
 - **l_p**: Lag offset for precipitation features (days)
 - **l_s**: Lag offset for snowfall features (days)
 
-We comment on the limitations of this process in the limitations section below, but it serves as a critical step in guiding our feature selection and engineering for the modeling phase.
-
 ## 3. Modeling and model selection 
 
 We consider three main families of models for forecasting pothole requests:
@@ -129,6 +127,8 @@ Binomial variants.
 2. XGBoost with a Poisson objective
 
 3. A hybrid XGB-SARIMA model that trains an XG Boost model and then fits a SARIMA model to the residuals to capture any remaining temporal autocorrelation.
+
+We discuss the loading and training of these models in [this notebook](modeling.ipynb). A key aspect of our modeling approach is that our models are autoregressive--i.e they use lagged values of the target variable as features. We therefore also [discuss](4_modeling.ipynb) the issues with data leakage and the approach we took to mitigate it. 
 
 ### A note on hyperparameter tuning 
 
