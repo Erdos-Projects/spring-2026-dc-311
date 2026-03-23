@@ -104,6 +104,16 @@ In order to build features from the weather data using the lagged and rolling tr
 
 ![Discovering optimal rolling window size and lag for weather features](lag_discovery.png)
 
+**Hyperparameter Definitions:**
+- **d**: Forecast horizon in days
+- **d_f**: Rolling window size for freeze-thaw count features (days)
+- **d_p**: Rolling window size for precipitation features (days)
+- **d_s**: Rolling window size for snowfall features (days)
+- **k_AR**: Autoregressive lag window size (number of prior days used as features)
+- **l_f**: Lag offset for freeze-thaw count features (days)
+- **l_p**: Lag offset for precipitation features (days)
+- **l_s**: Lag offset for snowfall features (days)
+
 We comment on the limitations of this process in the limitations section below, but it serves as a critical step in guiding our feature selection and engineering for the modeling phase.
 
 ### 3. Modeling and model selection 
@@ -131,6 +141,9 @@ After executing this, you get a sweep ID in the output, which you can use to lau
 python3 modeling/search/sweep.py +sweep_run=default sweep_run.sweep_id{YOUR_SWEEP_ID}
 ```
 
+A hyperparameter sweep for the Poisson GLM with the 7-day forecast looks like this in the WandB dashboard:
+
+![Bayesian Optimization Sweep on the lag, rolling window size, and autoregression length hyperparameters--note that the optimization starts to converge to a lower MAE as the sweep progresses](poisson_sweep.png)
 
 #### Best Hyperparameters by Model and Forecast Horizon
 
@@ -151,15 +164,6 @@ The optimal feature engineering hyperparameters identified through Bayesian sear
 | XGBoost SARIMAX | 5 | 8 | 21 | 7 | 0 | 9 | 10 | 1 |
 | XGBoost SARIMAX | 7 | 11 | 9 | 20 | 0 | 5 | 9 | 10 |
 
-**Hyperparameter Definitions:**
-- **d**: Forecast horizon in days
-- **d_f**: Rolling window size for freeze-thaw count features (days)
-- **d_p**: Rolling window size for precipitation features (days)
-- **d_s**: Rolling window size for snowfall features (days)
-- **k_AR**: Autoregressive lag window size (number of prior days used as features)
-- **l_f**: Lag offset for freeze-thaw count features (days)
-- **l_p**: Lag offset for precipitation features (days)
-- **l_s**: Lag offset for snowfall features (days)
 
 #### b. Autoregressive prediction 
 #### Model Performance Results
@@ -174,26 +178,23 @@ Test set performance across all models and forecast horizons:
 | GLM Poisson | 1.3641 | 1.8761 | 0.4897 | 0.5569 | 1.8747 | 0.4474 |
 | XGBoost | 1.3852 | 1.9379 | 0.4991 | 0.5841 | 2.1971 | 0.4034 |
 | XGBoost SARIMAX | 1.4025 | 1.9684 | 0.5089 | 0.6138 | 2.3055 | 0.3473 |
-```bash
+
 **Results for d=5 (5-day forecast)**
-python3 -m modeling.train --config-name first_try \
 | Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance | Correlation |
 |-------|-----|------|--------------|---------------|---------------------|------------|
 | GLM Poisson | 4.837 | 6.5543 | 0.4744 | 0.6559 | 4.4537 | 0.6164 |
 | GLM Negative Binomial | 4.8353 | 6.5567 | 0.4752 | 0.6577 | 4.4273 | 0.6289 |
 | XGBoost SARIMAX | 4.8113 | 6.4203 | 0.5052 | 0.7728 | 4.4361 | 0.6233 |
 | XGBoost | 5.0324 | 6.7125 | 0.5126 | 0.722 | 5.2522 | 0.5882 |
-  ++ward.raw_311='data/311_data/ward3_potholes_20210101_20251231.parquet' \
+
 **Results for d=7 (7-day forecast)**
-  ++ward.weather_cache='data/weather_cache/weather_ward3_20200601_20251231.parquet' \
+
 | Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance | Correlation |
 |-------|-----|------|--------------|---------------|---------------------|------------|
 | GLM Negative Binomial | 6.5126 | 8.731 | 0.4194 | 0.5133 | 5.5558 | 0.6953 |
 | GLM Poisson | 6.5728 | 8.7486 | 0.4282 | 0.5273 | 5.7673 | 0.6629 |
 | XGBoost | 6.5903 | 8.6644 | 0.45 | 0.5884 | 5.9539 | 0.7005 |
 | XGBoost SARIMAX | 6.5989 | 8.6049 | 0.453 | 0.5669 | 6.0111 | 0.6705 |
-  wandb.enabled=false
-```
 
 ### Loading and evaluating trained models
 Each run is saved under `results/<stem>/` with:
