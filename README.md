@@ -238,3 +238,56 @@ Weather feature coverage is still narrow. This work uses precipitation, snow dep
 ### Experiment tracking
 - optional Weights & Biases integration via config (`wandb.enabled`)
 
+## Repository File Organization
+
+```mermaid
+flowchart TB
+    root[spring-2026-dc-311]
+
+    root --> notebooks[Notebooks]
+    notebooks --> n1[data_acquisition.ipynb]
+    notebooks --> n2[eda_feature_params.ipynb]
+    notebooks --> n3[load_process.ipynb]
+    notebooks --> n4[modeling.ipynb]
+    notebooks --> n5[model_eva_rong.ipynb]
+    notebooks --> n6[results.ipynb]
+    notebooks --> n7[test.ipynb]
+    notebooks --> n8[weather_integration_2023.ipynb]
+
+    root --> cfg[configs/]
+    cfg --> cfg_main[config.yaml, first_try.yaml, xgb_sarimax_debug.yaml]
+    cfg --> cfg_debug[debug/default.yaml]
+    cfg --> cfg_feat[features/best_* + default.yaml]
+    cfg --> cfg_model[model/baseline.yaml, glm*.yaml, xgb*.yaml, lgbm.yaml]
+    cfg --> cfg_search[search/bayes.yaml, search/grid.yaml]
+    cfg --> cfg_split[split/default.yaml, split/temporal.yaml]
+    cfg --> cfg_sweep[sweep/*, sweep_run/*]
+
+    root --> data[data/]
+    data --> d1[preprocess_311.py]
+    data --> d2[weather_fetch.py]
+    data --> d3[311_data/]
+    data --> d4[weather_cache/]
+    data --> d5[weather_query_configs/]
+
+    root --> mdl[modeling/]
+    mdl --> m1[data/]
+    mdl --> m2[models/]
+    mdl --> m3[search/]
+    mdl --> m4[features.py]
+    mdl --> m5[metrics.py]
+    mdl --> m6[split.py]
+    mdl --> m7[train.py]
+    mdl --> m8[evaluate.py]
+
+    root --> outputs[outputs/]
+    outputs --> o1[YYYY-MM-DD run snapshots]
+
+    root --> results[results/]
+    results --> r1[ward*_best_* run folders]
+    results --> r2[model.pkl + run.yaml + metrics artifacts]
+
+    root --> docs[docs/]
+    root --> meta[README.md, requirements.txt, environment.yml, pyproject.toml]
+```
+
