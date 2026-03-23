@@ -6,6 +6,7 @@ Potholes are a comon urban infrastructure issue, and timely repair is critical f
 Given a date $t$, predict the number of pothole requests expected over the next $d$ days using information available up to $t$ (including lagged weather and historical request behavior).
 
 ### Primary KPIs and Stakeholders
+
 - **KPIs**:
 - MAE (mean absolute error)
 - RMSE (root mean squared error)
@@ -28,9 +29,9 @@ We use two primary data sources:
 
 The DC 311 data is accessed from the (Open Data DC)[https://opendata.dc.gov/datasets/] portal, which provides annual CSV exports of all service requests. We filter to those with `SERVICECODEDESCRIPTION == "Pothole"` to get the pothole data. We found that the serivce requests baselines differed significantly across wards, leading us to focus on DC's Ward 3, which has the largest number of pothole service requests.
 
-![Top 30 Services by Total Request Count (2021-2025)](service_requests_distribution.png)
+![Top 30 Services by Total Request Count (2021-2025)](assets/service_requests_distribution.png)
 
-![Total Pothole Requests by Ward (2021-2025)](ward_distribution.png)
+![Total Pothole Requests by Ward (2021-2025)](assets/ward_distribution.png)
 
 Raw DC 311 CSV files are expected as annual exports (for example, in a local `csv_data/` folder or another user-provided path). The preprocessing entrypoint is:
 - `data/preprocess_311.py`
@@ -100,9 +101,9 @@ Freeze-thaw counts are built from hourly runs, then aggregated daily.
 
 ### 2. Data Exploration
 
-In order to build features from the weather data using the lagged and rolling transformations, we write a flexible feature assembly function that takes in the raw weather data and applies the specified rolling and lag parameters to create the `precip_roll`, `snow_roll`, and `ftc_roll` features. This function is designed to be modular, allowing for easy experimentation with different parameter values during the EDA phase. The core logic of this feature generation process is encapsulated in the `assemble_features` function within `modeling/features.py`. We also include time series features using a trigonometric encoding of the day of year and day of week indicators, which are implemented in `modeling/data/master.py` as part of the daily feature building process. We also aimed to make our models autoregressive--i.e to use past counts to predict the current counts. We discuss the issues with data leakage and the approach we took to mitigate it in the section below. Our models therefore predict the $d$-day cumulative count of pothole requests $Y^{d}_{t}$ at date $t$, using weather features $X_{t}$, temporal features $\tau_{t}$ and past values of the target variable $Y^{d}_{t-1}, Y^{d}_{t-2}, ..., Y^{d}_{t-k_{AR}}$ as inputs. In particular, we find that the choice of lag and window parameters for the rolling weather features has a significant impact on their correlation with the target pothole counts. To systematically explore this, we perform a small grid-based optimization over a small grid of lag and window parameters to identify which combinations yield the strongest mean absolute correlation with the target variable.
+A key driver of pothole formation is the [freeze-thaw cycle](https://cnycentral.com/weather/weather-wisdom/pothole-season-explaining-how-the-weather-plays-a-role-in-creating-fixing-potholes) which accounts for the repeated freezing and melting of water that forms and opens cracks in the pavement. A [memo from the Minnesota department of transportation](https://dot.state.mn.us/mnroad/nrra/structure-teams/geotechnical/files/environmental-impacts-tap-meeting-follow-up-freeze-thaw-cycles-comparison-update.pdf) even specifies how to calculate these freeze thaw cycles using hourly temperatures. We implement this in `modeling/features.py` and encapsulated the general feature generation process in the `assemble_features` function within `modeling/features.py`. We also include time series features using a trigonometric encoding of the day of year and day of week indicators, which are implemented in `modeling/data/master.py` as part of the daily feature building process. We also aimed to make our models autoregressive--i.e to use past counts to predict the current counts. We discuss the issues with data leakage and the approach we took to mitigate it in the section below. Our models therefore predict the $d$-day cumulative count of pothole requests $Y^{d}_{t}$ at date $t$, using weather features $X_{t}$, temporal features $\tau_{t}$ and past values of the target variable $Y^{d}_{t-1}, Y^{d}_{t-2}, ..., Y^{d}_{t-k_{AR}}$ as inputs. In particular, we find that the choice of lag and window parameters for the rolling weather features has a significant impact on their correlation with the target pothole counts. To systematically explore this, we perform a small grid-based optimization over a small grid of lag and window parameters to identify which combinations yield the strongest mean absolute correlation with the target variable.
 
-![Discovering optimal rolling window size and lag for weather features](lag_discovery.png)
+![Discovering optimal rolling window size and lag for weather features](assets/lag_discovery.png)
 
 **Hyperparameter Definitions:**
 - **d**: Forecast horizon in days
@@ -143,35 +144,21 @@ python3 modeling/search/sweep.py +sweep_run=default sweep_run.sweep_id{YOUR_SWEE
 
 A hyperparameter sweep for the Poisson GLM with the 7-day forecast looks like this in the WandB dashboard:
 
-![Bayesian Optimization Sweep on the lag, rolling window size, and autoregression length hyperparameters--note that the optimization starts to converge to a lower MAE as the sweep progresses](poisson_sweep.png)
+![Bayesian Optimization Sweep on the lag, rolling window size, and autoregression length hyperparameters--note that the optimization starts to converge to a lower MAE as the sweep progresses](assets/poisson_sweep.png)
 
 #### Best Hyperparameters by Model and Forecast Horizon
 
 The optimal feature engineering hyperparameters identified through Bayesian search for each model and forecast horizon ($d$) are summarized below:
 
-| Model | d | d_f | d_p | d_s | k_AR | l_f | l_p | l_s |
-|-------|---|-----|-----|-----|------|-----|-----|-----|
-| GLM Negative Binomial | 1 | 7 | 14 | 18 | 0 | 1 | 1 | 8 |
-| GLM Negative Binomial | 5 | 11 | 9 | 17 | 0 | 10 | 6 | 9 |
-| GLM Negative Binomial | 7 | 9 | 19 | 19 | 0 | 10 | 8 | 10 |
-| GLM Poisson | 1 | 7 | 19 | 20 | 0 | 1 | 1 | 10 |
-| GLM Poisson | 5 | 9 | 15 | 20 | 0 | 8 | 10 | 10 |
-| GLM Poisson | 7 | 18 | 12 | 19 | 0 | 7 | 6 | 6 |
-| XGBoost | 1 | 21 | 8 | 8 | 8 | 1 | 9 | 7 |
-| XGBoost | 5 | 8 | 7 | 9 | 0 | 10 | 9 | 5 |
-| XGBoost | 7 | 16 | 12 | 19 | 0 | 7 | 2 | 9 |
-| XGBoost SARIMAX | 1 | 21 | 8 | 14 | 10 | 10 | 9 | 10 |
-| XGBoost SARIMAX | 5 | 8 | 21 | 7 | 0 | 9 | 10 | 1 |
-| XGBoost SARIMAX | 7 | 11 | 9 | 20 | 0 | 5 | 9 | 10 |
+![Best hyperparameters, averaged over the models by Model and Forecast Horizon](assets/best_hyperparameters.png)
 
 
-#### b. Autoregressive prediction 
-#### Model Performance Results
+### Model Performance Results
 
 Test set performance across all models and forecast horizons:
 
 **Results for d=1 (1-day forecast)**
-### Training
+
 | Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance | Correlation |
 |-------|-----|------|--------------|---------------|---------------------|------------|
 | GLM Negative Binomial | 1.3525 | 1.85 | 0.488 | 0.5542 | 1.8282 | 0.4859 |
@@ -196,7 +183,15 @@ Test set performance across all models and forecast horizons:
 | XGBoost | 6.5903 | 8.6644 | 0.45 | 0.5884 | 5.9539 | 0.7005 |
 | XGBoost SARIMAX | 6.5989 | 8.6049 | 0.453 | 0.5669 | 6.0111 | 0.6705 |
 
-### Loading and evaluating trained models
+### Interpreting the results
+
+Across both error (MAE) and alignment with signal shape (correlation), the GLM Negative Binomial model is the strongest overall choice. It achieves the best MAE at $d=1$ and $d=7$, and at $d=5$ it remains extremely close to the top MAE while also having the highest correlation among the four models.
+
+The hyperparameter plot also highlights a clear pattern in the autoregressive term: $k_{AR}=0$ is selected in 10 of 12 best configurations. Only two cases ($d=1$ for XGBoost and XGBoost SARIMAX) prefer nonzero autoregressive depth. This repeated selection of $k_{AR}=0$ suggests that direct autoregressive history is usually not required once lagged/rolling weather and calendar features are included.
+
+Overall, the baseline count-model family remains highly competitive, with the baseline Negative Binomial model still emerging as the best practical model in this study.
+
+#### Loading and evaluating trained models
 Each run is saved under `results/<stem>/` with:
 - `model.pkl`
 - `run.yaml`
@@ -208,18 +203,30 @@ python3 -m modeling.evaluate --config-name first_try \
   load_model=<stem_from_training_output> \
   wandb.enabled=false
 ```
+We also provide a Jupyter notebook (`results.ipynb`) that loads the trained models and generates performance comparison tables and visualizations across the different models and forecast horizons.
 
-Manual loading option:
-```python
-import pickle
+## Conclusion
 
-with open("results/<stem>/model.pkl", "rb") as f:
-    saved = pickle.load(f)
+This project demonstrates that relatively simple count-based models, when paired with carefully engineered lagged weather features, can produce useful short-horizon forecasts of pothole service demand. In particular, the Negative Binomial GLM remained a strong and stable baseline across horizons. At the same time, the current pipeline should be viewed as a first step rather than a production-ready citywide forecasting system.
 
-model = saved["model"]
-feature_cols = saved["feature_cols"]
-feat_params = saved["feat_params"]
-```
+## Limitations and Future Work
+
+### Model limitations
+
+The current model family is limited in its ability to learn long-range temporal dynamics and nonlinear interactions that evolve over time. Future work should include stronger autoregressive deep learning approaches such as RNNs, LSTMs, and transformer-based time-series models, which may better capture sequential dependencies and regime shifts.
+
+### Data coverage limitations
+
+The training window is constrained relative to the full historical 311 record. Ideally, we would train on the entire available history back to 2011 to increase robustness and improve rare-event coverage. In practice, this is complicated by two factors: (1) 2020 is an atypical COVID-era period that may introduce nonstationary behavior, and (2) the historical weather API used here does not extend far enough back to fully align with the oldest 311 records.
+
+### Spatial aggregation limitations
+
+An aggregate ward-level model is only partially actionable because roads differ substantially in degradability, exposure, and maintenance conditions. A more useful formulation is to model pothole formation over the road network itself, where each road segment (or intersection) is represented as a node/edge with evolving features. This motivates future graph-based approaches (graphical models and graph neural networks) for spatiotemporal forecasting.
+
+### Feature limitations
+
+Weather feature coverage is still narrow. This work uses precipitation, snow depth, and freeze-thaw counts, but does not include variables such as soil moisture that may directly affect pavement weakening. Additional non-weather covariates such as traffic intensity and pavement condition would likely improve predictions; however, currently available open datasets for these are often annual, which is too coarse for the daily granularity targeted in this project.
+ 
 
 ## Software Engineering Aspects
 
