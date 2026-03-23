@@ -109,67 +109,20 @@ In order to build features from the weather data using the lagged and rolling tr
 ### 3. Modeling and model selection 
 
 We consider three main families of models for forecasting pothole requests:
+
 1. Generalized Linear Models (GLMs) for count data, including Poisson and Negative
 Binomial variants.
+
 2. XGBoost with a Poisson objective
-3. A hybrid XGB-SARIMA model that combines the strengths of both approaches
 
-Note that the XGBoost and GLMs are designed to use both the engineered weather features and the seasonal/date features, 
+3. A hybrid XGB-SARIMA model that trains an XG Boost model and then fits a SARIMA model to the residuals to capture any remaining temporal autocorrelation.
 
-#### 2a) Grid-based optimization over $d$ and lag/window hyperparameters
-EDA sweep notebook:
-- `eda_feature_params.ipynb`
+#### a. Hyperparameter tuning 
 
-It performs a grid sweep over:
-- `d in {1,3,5,7}`
-- weather window/lag params (`d_p,l_p,d_s,l_s,d_f,l_f`)
-- fixed `k_AR=0` in that notebook
+We have 7 main hyperparameters to tune for the data, given by the rolling window size of each weather feature (total precipitation, total FTC's, mean snowfall) and the size of the autoregressive window. We additionally want to train a new model for each forecast horizon (1-day, 3-day, 7-day cumulative counts), which may have different optimal hyperparameters. This leads to a combinatorial explosion of hyperparameter combinations--to circumvent this we use Bayesian optimization to efficiently optimize over the hyperparameter space. In particular, we use the in-built Bayesian optimizer in the Weights & Biases library, which allows us to easily track and compare different runs with different hyperparameter settings. The optimization process is configured in `modeling/search/bayes.py`, where we define the search space for the hyperparameters and the objective function that evaluates model performance based on the chosen KPIs. 
 
-Selection rule in the notebook:
-- compute correlations of `precip_roll`, `snow_roll`, `ftc_roll` with target `Y`
-- rank by mean absolute correlation
-- choose best parameter combo per `d`
+#### b. Autoregressive prediction 
 
-Training-time exhaustive grid search (pipeline version):
-- `modeling/search/grid.py`
-- config: `configs/search/grid.yaml`
-
-#### 2b) Correlation-lag discovery
-Correlation-driven lag analysis appears in:
-- `eda.ipynb` (Pearson heatmap for daily pothole/weather signals)
-- `eda_feature_params.ipynb` (systematic lag/window sweep)
-
-The workflow checks whether same-day weather is predictive or whether lagged/aggregated weather better aligns with pothole counts.
-
-### 3. Feature Selection
-Selected/engineered features include:
-
-#### 3a) Lagged weather + rolling aggregates
-- `precip_roll`, `snow_roll`, `ftc_roll`
-- controlled by (`d_p,l_p,d_s,l_s,d_f,l_f`)
-
-#### 3b) Seasonal and calendar features
-From `modeling/data/master.py`:
-- `sin_doy`, `cos_doy` (day-of-year cyclic encoding)
-- day-of-week indicators (`dow_Mon` ... `dow_Sat`)
-
-#### 3c) Weekend one-hot/binary signal
-- `is_weekend` is explicitly included as a binary weekend feature.
-
-## Modeling
-
-### Three implemented model families
-1. GLM for counts
-   - `modeling/models/glm.py`
-   - supports Poisson GLM and Negative Binomial GLM behavior
-2. XGBoost with Poisson objective
-   - `modeling/models/gbm.py` (`XGBModel`)
-3. XGB-SARIMAX hybrid model
-   - `modeling/models/xgb_sarimax.py`
-
-Model registry/factory:
-- `modeling/models/__init__.py`
-- config targets in `configs/model/*.yaml`
 
 ### Training
 ```bash
@@ -225,3 +178,4 @@ feat_params = saved["feat_params"]
 
 ### Experiment tracking
 - optional Weights & Biases integration via config (`wandb.enabled`)
+
