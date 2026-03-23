@@ -1,7 +1,7 @@
 defaults:
   - ward: ward3_2021_2025
   - features: default
-  - model: xgb_sarimax
+  - model: glm
   - split: temporal
   - debug: default
   - wandb: default
