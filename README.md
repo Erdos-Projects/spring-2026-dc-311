@@ -52,7 +52,7 @@ The DC 311 data is accessed from the (Open Data DC)[https://opendata.dc.gov/data
 
 ![Top 30 Services by Total Request Count (2021-2025)](assets/service_requests_distribution.png)
 
-![Total Pothole Requests by Ward (2021-2025)](assets/ward_distribution.png)
+![Total Pothole Requests by Ward (2021-2025)](https://github.com/Erdos-Projects/spring-2026-dc-311/edit/pub/assets/ward_distribution.png)
 
 Raw DC 311 CSV files are expected as annual exports (for example, in a local `csv_data/` folder or another user-provided path). The preprocessing entrypoint is:
 - `data/preprocess_311.py`
