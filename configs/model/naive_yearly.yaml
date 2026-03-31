@@ -1,0 +1,4 @@
+_target_: modeling.models.seasonal_baselines.LastYearNaive
+name: naive_last_year
+lag_days: 365
+fallback: train_mean

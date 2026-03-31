@@ -9,3 +9,6 @@ defaults:
 
 root: .
 load_model: null
+
+evaluate:
+  naive_mode: strict

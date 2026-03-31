@@ -1,0 +1,12 @@
+method: temporal_window
+
+# Fit on train + val through 2024-12-31, then evaluate only first week of 2025.
+train_end: "2024-09-30"
+val_start: "2024-10-01"
+val_end: "2024-12-31"
+test_start: "2025-01-01"
+test_end: "2025-01-07"
+
+# Enforce exactly one week in test.
+expected_test_days: 7
+strict_no_leak: true

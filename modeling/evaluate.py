@@ -28,8 +28,39 @@ from omegaconf import DictConfig, OmegaConf
 from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
-from modeling.split import make_split
+from modeling.split import make_split, is_time_series_mode
 import time as t
+
+
+def _predict_for_eval(
+    model,
+    feat_df: pd.DataFrame,
+    test_df: pd.DataFrame,
+    X_test: pd.DataFrame,
+    split_method: str,
+    naive_mode: str = "strict",
+) -> np.ndarray:
+    """
+    Predict with model-specific behavior.
+
+    For calendar naive baselines:
+      - strict mode: only allow actual Y values before test_start as reference.
+      - oracle mode: allow full reference table (for appendix/debug only).
+    Other models keep existing recursive behavior in time-series modes.
+    """
+    if hasattr(model, "set_reference") and "date" in test_df.columns:
+        if naive_mode not in {"strict", "oracle"}:
+            raise ValueError(
+                f"Unknown naive_mode={naive_mode!r}. "
+                "Valid options: 'strict', 'oracle'."
+            )
+        cutoff = None
+        if naive_mode == "strict":
+            test_start = pd.to_datetime(test_df["date"]).min().normalize()
+            cutoff = test_start - pd.Timedelta(days=1)
+        model.set_reference(feat_df[["date", "Y"]], max_actual_date=cutoff)
+        return model.predict(test_df[["date"]], recursive=False)
+    return model.predict(X_test, recursive=is_time_series_mode(split_method))
 
 
 def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
@@ -121,13 +152,14 @@ def evaluate(cfg: DictConfig) -> dict:
     breakpoint()
     pothole_df, weather_df = build_daily(run_cfg)
     feat_df = assemble_features(pothole_df, weather_df, feat_params)
-    feat_df = make_split(feat_df, run_cfg.split)
+    feat_df = make_split(feat_df, run_cfg.split, feat_params)
     breakpoint()
     test_df = feat_df[feat_df["split"] == "test"]
     X_test = test_df[feature_cols]
     y_test = test_df["Y"].values
     split_method = getattr(getattr(run_cfg, "split", None), "method", "random")
-    preds = model.predict(X_test, recursive=(split_method == "temporal"))
+    naive_mode = str(getattr(getattr(cfg, "evaluate", None), "naive_mode", "strict"))
+    preds = _predict_for_eval(model, feat_df, test_df, X_test, split_method, naive_mode=naive_mode)
     breakpoint()
     metrics = {
         "test_mae":              float(mae(y_test, preds)),

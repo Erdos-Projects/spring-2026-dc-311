@@ -22,7 +22,7 @@ from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
-from modeling.split import make_split
+from modeling.split import make_split, is_time_series_mode
 
 
 def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1") -> None:
@@ -48,7 +48,7 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
 
             try:
                 feat_df = assemble_features(pothole_df, weather_df, params)
-                feat_df = make_split(feat_df, cfg.split)
+                feat_df = make_split(feat_df, cfg.split, params)
 
                 feature_cols = [
                     c for c in feat_df.columns
@@ -67,7 +67,10 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
                 fitted = build_model(cfg.model)
                 fitted.fit(train_df[feature_cols], train_df["Y"])
                 split_method = getattr(cfg.split, "method", "random")
-                preds = fitted.predict(val_df[feature_cols], recursive=(split_method == "temporal"))
+                preds = fitted.predict(
+                    val_df[feature_cols],
+                    recursive=is_time_series_mode(split_method),
+                )
 
                 run.log({
                     "val_mae":              float(mae(val_df["Y"].values, preds)),

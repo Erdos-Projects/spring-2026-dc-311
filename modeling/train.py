@@ -31,7 +31,7 @@ from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
-from modeling.split import make_split
+from modeling.split import make_split, is_time_series_mode
 
 
 def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
@@ -41,18 +41,20 @@ def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
     """
     K-fold CV on the training set; returns mean metrics and per-fold lists.
 
-    When method='temporal', uses TimeSeriesSplit so each fold's validation
-    window is strictly later than its training window.  When method='random',
-    uses StratifiedKFold (stratified by quarter) as before.
+    When method is time-series ('temporal' or 'temporal_window'), uses
+    TimeSeriesSplit so each fold's validation window is strictly later than
+    its training window.  When method='random', uses StratifiedKFold
+    (stratified by quarter).
     """
-    if method == "temporal":
+    ts_mode = is_time_series_mode(method)
+    if ts_mode:
         cv = TimeSeriesSplit(n_splits=k)
     else:
         cv = StratifiedKFold(n_splits=k, shuffle=True, random_state=random_state)
 
     fold_mae, fold_rmse, fold_pd = [], [], []
 
-    for train_idx, val_idx in cv.split(X, None if method == "temporal" else quarters):
+    for train_idx, val_idx in cv.split(X, None if ts_mode else quarters):
         X_tr, X_v = X.iloc[train_idx], X.iloc[val_idx]
         y_tr, y_v = y.iloc[train_idx], y.iloc[val_idx]
         model = build_model(cfg_model)
@@ -102,6 +104,17 @@ def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg,
 
     with open(run_cfg_path, "w") as f:
         run_data = OmegaConf.to_container(cfg, resolve=True)
+        split_method = str(getattr(getattr(cfg, "split", None), "method", "random"))
+        strict_no_leak = bool(
+            getattr(getattr(cfg, "split", None), "strict_no_leak", is_time_series_mode(split_method))
+        )
+        naive_mode = str(getattr(getattr(cfg, "evaluate", None), "naive_mode", "strict"))
+
+        run_data["leakage"] = {
+            "strict_no_leak": strict_no_leak,
+            "naive_mode": naive_mode,
+            "time_series_mode": is_time_series_mode(split_method),
+        }
         run_data["model_path"] = str(model_path)
         run_data["run_id"]     = run_id
         run_data["wx_range"]   = wx_range
@@ -155,7 +168,7 @@ def train(cfg: DictConfig) -> dict:
     breakpoint()
     pothole_df, weather_df = build_daily(cfg) # build the daily series 
     feat_df = assemble_features(pothole_df, weather_df, cfg.features) 
-    feat_df = make_split(feat_df, cfg.split) # split the data into train, val, and test sets
+    feat_df = make_split(feat_df, cfg.split, cfg.features) # split the data into train, val, and test sets
     feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
     breakpoint()
     train_df = feat_df[feat_df["split"] == "train"] # get the train set
@@ -173,13 +186,14 @@ def train(cfg: DictConfig) -> dict:
     breakpoint()
     # ── K-fold CV ─────────────────────────────────────────────────────────────
     split_method = getattr(cfg.split, "method", "random")
+    ts_mode = is_time_series_mode(split_method)
     quarters = pd.to_datetime(train_df["date"]).dt.quarter
     cv_metrics = cross_val(
         cfg.model, X_train, y_train, quarters,
         k=5,
         random_state=int(getattr(cfg.split, "random_state", 42)),
         method=split_method,
-        recursive=(split_method == "temporal"),
+        recursive=ts_mode,
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
     breakpoint()
@@ -220,7 +234,7 @@ def train(cfg: DictConfig) -> dict:
     model.fit(X_tv, y_tv) # fit the model on the train and val set
     # breakpoint()
     # ── Val metrics from the final model (for reference) ─────────────────────
-    val_preds = model.predict(val_df[feature_cols], recursive=(split_method == "temporal"))
+    val_preds = model.predict(val_df[feature_cols], recursive=ts_mode)
     val_metrics = {
         "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set
         "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set

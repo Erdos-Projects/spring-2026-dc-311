@@ -1,0 +1,44 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+evaluate:
+  naive_mode: strict
+features:
+  d: 1
+  d_f: 7
+  d_p: 14
+  d_s: 18
+  k_AR: 0
+  l_f: 1
+  l_p: 1
+  l_s: 8
+leakage:
+  naive_mode: strict
+  strict_no_leak: true
+  time_series_mode: true
+load_model: null
+model:
+  _target_: modeling.models.seasonal_baselines.LastWeekNaive
+  fallback: train_mean
+  lag_days: 7
+  name: naive_weekly_d_1
+model_name: naive_last_week
+model_path: results/ward3_naive_weekly_d_1_20200601_20251231_20260331_518d6d59/model.pkl
+root: .
+run_id: 20260331_518d6d59
+split:
+  method: temporal
+  strict_no_leak: true
+  test_frac: 0.15
+  val_frac: 0.15
+wandb:
+  enabled: false
+  project: DC-311-Pothole-Prediction
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20210101_20251231.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20200601_20251231.parquet
+wx_range: '20200601_20251231'

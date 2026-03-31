@@ -1,0 +1,40 @@
+project: dc311-rpan-sweep-20260328
+entity: 1061743513
+name: feature_param_search
+
+method: bayes
+metric:
+  name: val_mae
+  goal: minimize
+
+parameters:
+  d:
+    value: 1
+  d_p:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_p:
+    distribution: int_uniform
+    min: 1
+    max: 10
+  d_s:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_s:
+    distribution: int_uniform
+    min: 1
+    max: 10
+  d_f:
+    distribution: int_uniform
+    min: 7
+    max: 21
+  l_f:
+    distribution: int_uniform
+    min: 1
+    max: 10
+  k_AR:
+    distribution: int_uniform
+    min: 0
+    max: 10

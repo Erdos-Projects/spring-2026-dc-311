@@ -1,0 +1,47 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+evaluate:
+  naive_mode: strict
+features:
+  d: 1
+  d_f: 15
+  d_p: 15
+  d_s: 15
+  k_AR: 0
+  l_f: 0
+  l_p: 10
+  l_s: 0
+leakage:
+  naive_mode: strict
+  strict_no_leak: true
+  time_series_mode: true
+load_model: null
+model:
+  _target_: modeling.models.glm.NegBinGLM
+  alpha: 1.0
+  name: negbin_glm_fw2025
+model_name: negbin_glm
+model_path: results/ward3_negbin_glm_fw2025_20200601_20251231_20260331_f6d9b4ff/model.pkl
+root: .
+run_id: 20260331_f6d9b4ff
+split:
+  expected_test_days: 7
+  method: temporal_window
+  strict_no_leak: true
+  test_end: '2025-01-07'
+  test_start: '2025-01-01'
+  train_end: '2024-09-30'
+  val_end: '2024-12-31'
+  val_start: '2024-10-01'
+wandb:
+  enabled: false
+  project: DC-311-Pothole-Prediction
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20210101_20251231.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20200601_20251231.parquet
+wx_range: '20200601_20251231'
