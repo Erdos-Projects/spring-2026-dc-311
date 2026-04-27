@@ -24,13 +24,13 @@ import hydra
 import numpy as np
 import pandas as pd
 from omegaconf import DictConfig, OmegaConf
-from sklearn.model_selection import StratifiedKFold, TimeSeriesSplit
+from sklearn.model_selection import TimeSeriesSplit
 
 from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
-from modeling.split import make_split, is_time_series_mode
+from modeling.split import make_split
 
 
 def _prediction_frame(model, X: pd.DataFrame, y: pd.Series | None = None) -> pd.DataFrame:
@@ -44,36 +44,29 @@ def _prediction_frame(model, X: pd.DataFrame, y: pd.Series | None = None) -> pd.
     return X_pred
 
 
-def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
-              quarters: pd.Series, k: int = 5,
-              random_state: int = 42, method: str = "random",
-              recursive: bool = False,
-              horizon_h: int | None = None) -> dict:
+def cross_val(
+    cfg_model,
+    X: pd.DataFrame,
+    y: pd.Series,
+    k: int = 5,
+    horizon_h: int | None = None,
+) -> dict:
     """
-    K-fold CV on the training set; returns mean metrics and per-fold lists.
-
-    When method is time-series ('temporal' or 'temporal_window'), uses
-    TimeSeriesSplit so each fold's validation window is strictly later than
-    its training window.  When method='random', uses StratifiedKFold
-    (stratified by quarter).
+    Time-series CV on the training set; returns mean metrics and per-fold lists.
     """
-    ts_mode = is_time_series_mode(method)
-    if ts_mode:
-        cv = TimeSeriesSplit(n_splits=k)
-    else:
-        cv = StratifiedKFold(n_splits=k, shuffle=True, random_state=random_state)
+    cv = TimeSeriesSplit(n_splits=k)
 
     fold_mae, fold_rmse, fold_pd = [], [], []
 
-    for train_idx, val_idx in cv.split(X, None if ts_mode else quarters):
+    for train_idx, val_idx in cv.split(X):
         X_tr, X_v = X.iloc[train_idx], X.iloc[val_idx]
         y_tr, y_v = y.iloc[train_idx], y.iloc[val_idx]
         model = build_model(cfg_model)
         model.fit(X_tr, y_tr)
         preds = model.predict(
             _prediction_frame(model, X_v, y_v),
-            recursive=recursive,
-            horizon_h=horizon_h if recursive else None,
+            recursive=True,
+            horizon_h=horizon_h,
         )
         fold_mae.append(mae(y_v.values, preds))
         fold_rmse.append(rmse(y_v.values, preds))
@@ -119,14 +112,12 @@ def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg,
 
     with open(run_cfg_path, "w") as f:
         run_data = OmegaConf.to_container(cfg, resolve=True)
-        split_method = str(getattr(getattr(cfg, "split", None), "method", "random"))
-        strict_no_leak = bool(
-            getattr(getattr(cfg, "split", None), "strict_no_leak", is_time_series_mode(split_method))
-        )
+        split_method = str(getattr(getattr(cfg, "split", None), "method", "temporal"))
 
         run_data["leakage"] = {
-            "strict_no_leak": strict_no_leak,
-            "time_series_mode": is_time_series_mode(split_method),
+            "split_method": split_method,
+            "target_boundary_purge": True,
+            "time_series_mode": True,
         }
         run_data["model_path"] = str(model_path)
         run_data["run_id"]     = run_id
@@ -198,16 +189,10 @@ def train(cfg: DictConfig) -> dict:
         print(f"Features             : {feature_cols[:5]} … ({len(feature_cols)} total)")
 
     # ── K-fold CV ─────────────────────────────────────────────────────────────
-    split_method = getattr(cfg.split, "method", "random")
-    ts_mode = is_time_series_mode(split_method)
     horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
-    quarters = pd.to_datetime(train_df["date"]).dt.quarter
     cv_metrics = cross_val(
-        cfg.model, X_train, y_train, quarters,
+        cfg.model, X_train, y_train,
         k=5,
-        random_state=int(getattr(cfg.split, "random_state", 42)),
-        method=split_method,
-        recursive=ts_mode,
         horizon_h=horizon_h,
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
@@ -250,8 +235,8 @@ def train(cfg: DictConfig) -> dict:
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(
         _prediction_frame(model, val_df[feature_cols], val_df["Y"]),
-        recursive=ts_mode,
-        horizon_h=horizon_h if ts_mode else None,
+        recursive=True,
+        horizon_h=horizon_h,
     )
     val_metrics = {
         "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set

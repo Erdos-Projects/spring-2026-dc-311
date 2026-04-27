@@ -27,7 +27,7 @@ from omegaconf import DictConfig, OmegaConf
 from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
-from modeling.split import make_split, is_time_series_mode
+from modeling.split import make_split
 
 
 def _prediction_cols(model, feature_cols: list[str]) -> list[str]:
@@ -38,15 +38,13 @@ def _prediction_cols(model, feature_cols: list[str]) -> list[str]:
 def _predict_for_eval(
     model,
     X_test: pd.DataFrame,
-    split_method: str,
     horizon_h: int | None = None,
 ) -> np.ndarray:
     """Predict through the common model API."""
-    recursive = is_time_series_mode(split_method)
     return model.predict(
         X_test,
-        recursive=recursive,
-        horizon_h=horizon_h if recursive else None,
+        recursive=True,
+        horizon_h=horizon_h,
     )
 
 
@@ -144,13 +142,11 @@ def evaluate(cfg: DictConfig) -> dict:
     test_df = feat_df[feat_df["split"] == "test"]
     X_test = test_df[_prediction_cols(model, feature_cols)]
     y_test = test_df["Y"].values
-    split_method = getattr(getattr(run_cfg, "split", None), "method", "random")
     horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
 
     preds = _predict_for_eval(
         model,
         X_test,
-        split_method,
         horizon_h=horizon_h,
     )
 

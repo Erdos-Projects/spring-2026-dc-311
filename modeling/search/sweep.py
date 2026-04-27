@@ -22,7 +22,16 @@ from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
-from modeling.split import make_split, is_time_series_mode
+from modeling.split import make_split
+
+
+def _prediction_frame(model, X, y):
+    """Append Y only for naive lookup baselines, leaving learned models unchanged."""
+    if not model.name.startswith("naive_"):
+        return X
+    X_pred = X.copy()
+    X_pred["Y"] = y.values
+    return X_pred
 
 
 def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1") -> None:
@@ -66,10 +75,11 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
 
                 fitted = build_model(cfg.model)
                 fitted.fit(train_df[feature_cols], train_df["Y"])
-                split_method = getattr(cfg.split, "method", "random")
+                horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
                 preds = fitted.predict(
-                    val_df[feature_cols],
-                    recursive=is_time_series_mode(split_method),
+                    _prediction_frame(fitted, val_df[feature_cols], val_df["Y"]),
+                    recursive=True,
+                    horizon_h=horizon_h,
                 )
 
                 run.log({
