@@ -103,7 +103,7 @@ class XGBModel:
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         X_work = X.copy()
         preds = []
-        print(f"Using recursive prediction with k_AR = {k_AR}")
+        # print(f"Using recursive prediction with k_AR = {k_AR}")
         for i in range(len(X)):
             if i > 0:
                 for k in range(1, min(i, k_AR) + 1):
