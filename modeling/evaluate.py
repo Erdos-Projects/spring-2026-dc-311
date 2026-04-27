@@ -30,35 +30,24 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.split import make_split, is_time_series_mode
 
 
+def _prediction_cols(model, feature_cols: list[str]) -> list[str]:
+    """Naive baselines use true Y to update their lookup table during prediction."""
+    return feature_cols + (["Y"] if model.name.startswith("naive_") else [])
+
+
 def _predict_for_eval(
     model,
-    feat_df: pd.DataFrame,
-    test_df: pd.DataFrame,
     X_test: pd.DataFrame,
     split_method: str,
-    naive_mode: str = "strict",
+    horizon_h: int | None = None,
 ) -> np.ndarray:
-    """
-    Predict with model-specific behavior.
-
-    For calendar naive baselines:
-      - strict mode: only allow actual Y values before test_start as reference.
-      - oracle mode: allow full reference table (for appendix/debug only).
-    Other models keep existing recursive behavior in time-series modes.
-    """
-    if hasattr(model, "set_reference") and "date" in test_df.columns:
-        if naive_mode not in {"strict", "oracle"}:
-            raise ValueError(
-                f"Unknown naive_mode={naive_mode!r}. "
-                "Valid options: 'strict', 'oracle'."
-            )
-        cutoff = None
-        if naive_mode == "strict":
-            test_start = pd.to_datetime(test_df["date"]).min().normalize()
-            cutoff = test_start - pd.Timedelta(days=1)
-        model.set_reference(feat_df[["date", "Y"]], max_actual_date=cutoff)
-        return model.predict(test_df[["date"]], recursive=False)
-    return model.predict(X_test, recursive=is_time_series_mode(split_method))
+    """Predict through the common model API."""
+    recursive = is_time_series_mode(split_method)
+    return model.predict(
+        X_test,
+        recursive=recursive,
+        horizon_h=horizon_h if recursive else None,
+    )
 
 
 def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
@@ -153,11 +142,17 @@ def evaluate(cfg: DictConfig) -> dict:
     feat_df = make_split(feat_df, run_cfg.split, feat_params)
 
     test_df = feat_df[feat_df["split"] == "test"]
-    X_test = test_df[feature_cols]
+    X_test = test_df[_prediction_cols(model, feature_cols)]
     y_test = test_df["Y"].values
     split_method = getattr(getattr(run_cfg, "split", None), "method", "random")
-    naive_mode = str(getattr(getattr(cfg, "evaluate", None), "naive_mode", "strict"))
-    preds = _predict_for_eval(model, feat_df, test_df, X_test, split_method, naive_mode=naive_mode)
+    horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
+
+    preds = _predict_for_eval(
+        model,
+        X_test,
+        split_method,
+        horizon_h=horizon_h,
+    )
 
     metrics = {
         "test_mae":              float(mae(y_test, preds)),

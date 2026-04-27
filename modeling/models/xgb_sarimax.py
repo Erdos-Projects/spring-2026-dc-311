@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 import contextlib
 import sys
 
+from modeling.models.utils import validate_horizon_h
+
 class _LoggerWriter:
     """File-like writer that mirrors stdout text to logger."""
 
@@ -141,25 +143,45 @@ class xgb_sarimax:
 
         return self
 
-    def predict(self, X: pd.DataFrame, *, recursive: bool = False) -> np.ndarray:
+    def predict(
+        self,
+        X: pd.DataFrame,
+        *,
+        recursive: bool = False,
+        horizon_h: int | None = None,
+        **kwargs,
+    ) -> np.ndarray:
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
         if not recursive or len(ar_cols) == 0:
             xgb_pred = self._xgb.predict(X)
             correction = self._sarimax_result.forecast(steps=len(X))
             return xgb_pred + correction
-        print("Using recursive prediction with k_AR = {k_AR}")
+
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
-        correction = self._sarimax_result.forecast(steps=len(X))
+        print(f"Using recursive prediction with k_AR = {k_AR}")
+
+        h = validate_horizon_h(horizon_h)
+        correction = np.asarray(self._sarimax_result.forecast(steps=len(X)))
         X_work = X.copy()
         preds = []
-        for i in range(len(X)):
-            if i > 0:
-                for k in range(1, min(i, k_AR) + 1):
+
+        if h is None:
+            block_starts = range(0, len(X), len(X) or 1)
+            block_size = len(X)
+        else:
+            block_starts = range(0, len(X), h)
+            block_size = h
+
+        for block_start in block_starts:
+            block_end = min(block_start + block_size, len(X))
+            for i in range(block_start, block_end):
+                block_offset = i - block_start
+                for k in range(1, min(block_offset, k_AR) + 1):
                     col = f"pothole_lag{k}"
                     if col in X_work.columns:
                         X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
-            xgb_i = self._xgb.predict(X_work.iloc[[i]])[0]
-            preds.append(xgb_i + correction[i])
+                xgb_i = self._xgb.predict(X_work.iloc[[i]])[0]
+                preds.append(xgb_i + correction[i])
         return np.array(preds)
 
     @property

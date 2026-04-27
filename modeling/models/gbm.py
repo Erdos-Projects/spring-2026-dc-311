@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 
+from modeling.models.utils import predict_in_blocks
+
 class LGBMModel:
     """LightGBM regressor with Poisson objective (sklearn-style interface)."""
 
@@ -22,10 +24,20 @@ class LGBMModel:
         self._model.fit(X, y)
         return self
 
-    def predict(self, X: pd.DataFrame, *, recursive: bool = False, **kwargs) -> np.ndarray:
+    def predict(
+        self,
+        X: pd.DataFrame,
+        *,
+        recursive: bool = False,
+        horizon_h: int | None = None,
+        **kwargs,
+    ) -> np.ndarray:
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
         if not recursive or len(ar_cols) == 0:
             return np.clip(self._model.predict(X), 0, None)
+
+        if horizon_h is not None:
+            return predict_in_blocks(self, X, horizon_h)
 
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         X_work = X.copy()
@@ -73,15 +85,25 @@ class XGBModel:
         self._model.fit(X, y)
         return self
 
-    def predict(self, X: pd.DataFrame, *, recursive: bool = False, **kwargs) -> np.ndarray:
+    def predict(
+        self,
+        X: pd.DataFrame,
+        *,
+        recursive: bool = False,
+        horizon_h: int | None = None,
+        **kwargs,
+    ) -> np.ndarray:
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
         if not recursive or len(ar_cols) == 0:
             return np.clip(self._model.predict(X), 0, None)
 
+        if horizon_h is not None:
+            return predict_in_blocks(self, X, horizon_h)
+
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         X_work = X.copy()
         preds = []
-        print("Using recursive prediction with k_AR = {k_AR}")
+        print(f"Using recursive prediction with k_AR = {k_AR}")
         for i in range(len(X)):
             if i > 0:
                 for k in range(1, min(i, k_AR) + 1):

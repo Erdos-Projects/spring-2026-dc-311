@@ -33,10 +33,22 @@ from modeling.models import build_model
 from modeling.split import make_split, is_time_series_mode
 
 
+def _prediction_frame(model, X: pd.DataFrame, y: pd.Series | None = None) -> pd.DataFrame:
+    """Append Y only for naive lookup baselines, leaving learned models unchanged."""
+    if not model.name.startswith("naive_"):
+        return X
+    if y is None:
+        raise ValueError("Naive baseline prediction requires y values for lookup updates.")
+    X_pred = X.copy()
+    X_pred["Y"] = y.values
+    return X_pred
+
+
 def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
               quarters: pd.Series, k: int = 5,
               random_state: int = 42, method: str = "random",
-              recursive: bool = False) -> dict:
+              recursive: bool = False,
+              horizon_h: int | None = None) -> dict:
     """
     K-fold CV on the training set; returns mean metrics and per-fold lists.
 
@@ -58,7 +70,11 @@ def cross_val(cfg_model, X: pd.DataFrame, y: pd.Series,
         y_tr, y_v = y.iloc[train_idx], y.iloc[val_idx]
         model = build_model(cfg_model)
         model.fit(X_tr, y_tr)
-        preds = model.predict(X_v, recursive=recursive)
+        preds = model.predict(
+            _prediction_frame(model, X_v, y_v),
+            recursive=recursive,
+            horizon_h=horizon_h if recursive else None,
+        )
         fold_mae.append(mae(y_v.values, preds))
         fold_rmse.append(rmse(y_v.values, preds))
         fold_pd.append(poisson_deviance(y_v.values, preds))
@@ -107,11 +123,9 @@ def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg,
         strict_no_leak = bool(
             getattr(getattr(cfg, "split", None), "strict_no_leak", is_time_series_mode(split_method))
         )
-        naive_mode = str(getattr(getattr(cfg, "evaluate", None), "naive_mode", "strict"))
 
         run_data["leakage"] = {
             "strict_no_leak": strict_no_leak,
-            "naive_mode": naive_mode,
             "time_series_mode": is_time_series_mode(split_method),
         }
         run_data["model_path"] = str(model_path)
@@ -186,6 +200,7 @@ def train(cfg: DictConfig) -> dict:
     # ── K-fold CV ─────────────────────────────────────────────────────────────
     split_method = getattr(cfg.split, "method", "random")
     ts_mode = is_time_series_mode(split_method)
+    horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
     quarters = pd.to_datetime(train_df["date"]).dt.quarter
     cv_metrics = cross_val(
         cfg.model, X_train, y_train, quarters,
@@ -193,6 +208,7 @@ def train(cfg: DictConfig) -> dict:
         random_state=int(getattr(cfg.split, "random_state", 42)),
         method=split_method,
         recursive=ts_mode,
+        horizon_h=horizon_h,
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
 
@@ -232,7 +248,11 @@ def train(cfg: DictConfig) -> dict:
     model.fit(X_tv, y_tv) # fit the model on the train and val set
 
     # ── Val metrics from the final model (for reference) ─────────────────────
-    val_preds = model.predict(val_df[feature_cols], recursive=ts_mode)
+    val_preds = model.predict(
+        _prediction_frame(model, val_df[feature_cols], val_df["Y"]),
+        recursive=ts_mode,
+        horizon_h=horizon_h if ts_mode else None,
+    )
     val_metrics = {
         "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set
         "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set
