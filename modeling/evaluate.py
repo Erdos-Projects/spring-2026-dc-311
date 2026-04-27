@@ -7,7 +7,6 @@ and evaluates on the held-out test rows.
 
 Usage:
     python -m modeling.evaluate load_model=ward3_negbin_glm_20221201_20231231_20260316_da02efec
-    python -m modeling.evaluate load_model=<stem> --config-name first_try
     python -m modeling.evaluate load_model=<stem> wandb.enabled=false
 """
 
@@ -29,7 +28,6 @@ from modeling.data.master import build_daily
 from modeling.features import assemble_features
 from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.split import make_split, is_time_series_mode
-import time as t
 
 
 def _predict_for_eval(
@@ -143,45 +141,45 @@ def evaluate(cfg: DictConfig) -> dict:
       - residuals.png
     """
     model_path, run_cfg = _load_run(cfg)
-    breakpoint()
+
     with open(model_path, "rb") as f:
         saved = pickle.load(f)
     model = saved["model"]
     feature_cols = saved["feature_cols"]
     feat_params = SimpleNamespace(**saved["feat_params"])
-    breakpoint()
+
     pothole_df, weather_df = build_daily(run_cfg)
     feat_df = assemble_features(pothole_df, weather_df, feat_params)
     feat_df = make_split(feat_df, run_cfg.split, feat_params)
-    breakpoint()
+
     test_df = feat_df[feat_df["split"] == "test"]
     X_test = test_df[feature_cols]
     y_test = test_df["Y"].values
     split_method = getattr(getattr(run_cfg, "split", None), "method", "random")
     naive_mode = str(getattr(getattr(cfg, "evaluate", None), "naive_mode", "strict"))
     preds = _predict_for_eval(model, feat_df, test_df, X_test, split_method, naive_mode=naive_mode)
-    breakpoint()
+
     metrics = {
         "test_mae":              float(mae(y_test, preds)),
         "test_rmse":             float(rmse(y_test, preds)),
         "test_poisson_deviance": float(poisson_deviance(y_test, preds)),
     }
-    breakpoint()
+
     print("\n=== Test Set Evaluation ===")
     for k, v in metrics.items():
         print(f"  {k:30s}: {v:.4f}")
-    breakpoint()
+
     if cfg.debug.dry_run:
         return metrics
-    breakpoint()
+
     # ── Save metrics and plots into the run directory ─────────────────────────
     run_dir = Path("results") / cfg.load_model
     metrics_path = run_dir / "test_metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
-    breakpoint()
+
     plot_path = plot_diagnostics(test_df, y_test, preds, model, run_cfg, run_dir)
-    breakpoint()
+
     # ── wandb logging ─────────────────────────────────────────────────────────
     if cfg.wandb.enabled:
         wandb_run_id = run_cfg.get("wandb_run_id", None)
@@ -198,7 +196,7 @@ def evaluate(cfg: DictConfig) -> dict:
         })
         wandb.log({"test/residuals_plot": wandb.Image(str(plot_path))})
         wandb.finish()
-    breakpoint()
+
     return metrics
 
 

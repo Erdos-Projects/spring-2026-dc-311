@@ -15,7 +15,6 @@ Returns a tuple (pothole_df, weather_df):
 Usage:
     python -m modeling.data.master                    # default (ward3)
     python -m modeling.data.master ward=ward1
-    python -m modeling.data.master --config-name first_try
 """
 
 import math

@@ -6,7 +6,25 @@ build-backend = "setuptools.build_meta"
 name = "dc311-pothole"
 version = "0.1.0"
 requires-python = ">=3.10"
+dependencies = [
+    "hydra-core",
+    "lightgbm",
+    "matplotlib",
+    "numpy",
+    "omegaconf",
+    "openmeteo-requests",
+    "pandas",
+    "pmdarima",
+    "pyarrow",
+    "PyYAML",
+    "requests-cache",
+    "retry-requests",
+    "scikit-learn",
+    "statsmodels",
+    "wandb",
+    "xgboost",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["modeling*"]
+include = ["data*", "modeling*"]

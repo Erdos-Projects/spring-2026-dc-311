@@ -6,7 +6,6 @@ The fitted model is saved to results/model_{ward}_{model_name}_{run_id}.pkl.
 Usage:
     python -m modeling.train                            # default
     python -m modeling.train model=lgbm
-    python -m modeling.train --config-name first_try
     python -m modeling.train model=xgb features.d=10   # inline override
     python -m modeling.train wandb.enabled=false        # disable tracking
 """
@@ -153,7 +152,7 @@ def train(cfg: DictConfig) -> dict:
     """
     hex_key = uuid.uuid4().hex[:8]
     run_id = f"{datetime.date.today().strftime('%Y%m%d')}_{hex_key}"
-    breakpoint()
+
     # ── wandb init ────────────────────────────────────────────────────────────
     wandb_run = None
     if cfg.wandb.enabled:
@@ -165,25 +164,25 @@ def train(cfg: DictConfig) -> dict:
             config=OmegaConf.to_container(cfg, resolve=True),
             tags=[cfg.ward.name, cfg.model.name],
         )
-    breakpoint()
+
     pothole_df, weather_df = build_daily(cfg) # build the daily series 
     feat_df = assemble_features(pothole_df, weather_df, cfg.features) 
     feat_df = make_split(feat_df, cfg.split, cfg.features) # split the data into train, val, and test sets
     feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
-    breakpoint()
+
     train_df = feat_df[feat_df["split"] == "train"] # get the train set
     val_df = feat_df[feat_df["split"] == "val"] # get the val set
     train_val_df = feat_df[feat_df["split"].isin(["train", "val"])] # get the train and val set
-    breakpoint()
+
     X_train = train_df[feature_cols] # get the features for the train set
     y_train = train_df["Y"] 
-    breakpoint()
+
     if cfg.debug.verbose:
         print(f"Feature matrix shape : {feat_df.shape}")
         print(f"Train / val / test   : {len(train_df)} / {len(val_df)} / "
               f"{(feat_df['split']=='test').sum()}")
         print(f"Features             : {feature_cols[:5]} … ({len(feature_cols)} total)")
-    breakpoint()
+
     # ── K-fold CV ─────────────────────────────────────────────────────────────
     split_method = getattr(cfg.split, "method", "random")
     ts_mode = is_time_series_mode(split_method)
@@ -196,10 +195,9 @@ def train(cfg: DictConfig) -> dict:
         recursive=ts_mode,
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
-    breakpoint()
+
     # ── Log CV metrics to wandb ───────────────────────────────────────────────
     if cfg.wandb.enabled:
-        breakpoint()
         fold_maes  = cv_metrics.pop("_fold_mae")
         fold_rmses = cv_metrics.pop("_fold_rmse")
         fold_pds   = cv_metrics.pop("_fold_pd")
@@ -220,19 +218,19 @@ def train(cfg: DictConfig) -> dict:
         cv_metrics.pop("_fold_mae", None)
         cv_metrics.pop("_fold_rmse", None)
         cv_metrics.pop("_fold_pd", None)
-    # breakpoint()
+
     if cfg.debug.dry_run:
         print("[dry-run] Skipping final fit and model save.")
         if cfg.wandb.enabled:
             wandb.finish()
         return cv_metrics
-    # breakpoint()
+
     # ── Final fit on train + val ──────────────────────────────────────────────
     X_tv = train_val_df[feature_cols]
     y_tv = train_val_df["Y"] # get the target for the train and val set
     model = build_model(cfg.model) # build the model
     model.fit(X_tv, y_tv) # fit the model on the train and val set
-    # breakpoint()
+
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(val_df[feature_cols], recursive=ts_mode)
     val_metrics = {
@@ -240,45 +238,44 @@ def train(cfg: DictConfig) -> dict:
         "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set
         "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, val_preds)), # calculate the Poisson deviance for the val set
     }
-    # breakpoint()
+
     if cfg.wandb.enabled:
-        # breakpoint()
         wandb.log({
             "val/mae":              val_metrics["val_mae"],
             "val/rmse":             val_metrics["val_rmse"],
             "val/poisson_deviance": val_metrics["val_poisson_deviance"],
         })
-    # breakpoint()
+
     # Weather temporal range (from the full buffer series, not the pothole window)
     wx_start = pd.to_datetime(weather_df["date"].min()).strftime("%Y%m%d")
     wx_end   = pd.to_datetime(weather_df["date"].max()).strftime("%Y%m%d")
     wx_range = f"{wx_start}_{wx_end}"
-    # breakpoint()
+
     metrics = {**cv_metrics, **val_metrics, "run_id": run_id, "wx_range": wx_range}
 
     if cfg.wandb.enabled and wandb_run is not None:
         metrics["wandb_run_id"] = wandb_run.id
-    # breakpoint()
+
     stem = f"{cfg.ward.name}_{cfg.model.name}_{wx_range}_{run_id}"
     model_path, run_cfg_path = save_model(
         model, cfg.features, feature_cols, stem, run_id, wx_range, cfg,
         wandb_run_id=metrics.get("wandb_run_id"),
     )
     metrics_path = save_results(metrics, stem)
-    breakpoint()
+
     print(f"run_id      → {run_id}")
     print(f"wx_range    → {wx_range}")
     print(f"Model saved → {model_path}")
     print(f"Run config  → {run_cfg_path}")
     print(f"Metrics     → {metrics_path}")
     print(f"Final val MAE: {val_metrics['val_mae']:.4f}")
-    breakpoint()
+
     if cfg.wandb.enabled:
         wandb.finish()
-    breakpoint()
+
     if cfg.debug.inspect == "train":
         import IPython; IPython.embed(header="[inspect] train() locals")  # noqa: E702
-    breakpoint()
+
     return metrics
 
 

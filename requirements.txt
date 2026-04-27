@@ -7,6 +7,16 @@ statsmodels
 scikit-learn
 lightgbm
 xgboost
+hydra-core
+omegaconf
+PyYAML
+wandb
+pmdarima
+pandera
+missingno
+pygam
+interpret
+openpyxl
 openmeteo-requests
 requests-cache
 retry-requests

@@ -25,7 +25,8 @@ Given a date $t$, predict the number of pothole requests expected over the next 
 To compile and run the code in this repository, you will need to set up a Python environment with the required dependencies. We recommend using a conda environment for ease of package management. You can create and activate the environment using the following command:
 
 ```bash
-conda create -n dc_pothole_forecasting -f environment.yaml
+conda env create -n dc_pothole_forecasting -f environment.yml
+conda activate dc_pothole_forecasting
 ```
 
 We include a `pyproject.toml` file for compiling this repository as a package so you may make local imports from the `data/` and `modeling/` modules in the Jupyter notebooks. To install the package in editable mode, run:
@@ -41,7 +42,7 @@ Our data is stored in the `data` folder and is available for use. However, if yo
 
 **NOTE**: If you don't want to use the raw data, skip to Section 2 below! 
 
-The data acquisition process described below is detailed in the [data acquisition notebook](1_data_acquisition.ipynb). We also provide a shorter version [here](2_visualization.ipynb) where we use the functions in `data/` to shorten the workflow. 
+The data acquisition process described below is detailed in the [data acquisition notebook](1_data_acquisition.ipynb). We also provide a shorter visualization workflow [here](2_visualize_time_series.ipynb) where we use the functions in `data/` to shorten the workflow.
 
 We use two primary data sources:
 
@@ -52,7 +53,7 @@ The DC 311 data is accessed from the (Open Data DC)[https://opendata.dc.gov/data
 
 ![Top 30 Services by Total Request Count (2021-2025)](assets/service_requests_distribution.png)
 
-![Total Pothole Requests by Ward (2021-2025)](https://github.com/Erdos-Projects/spring-2026-dc-311/edit/pub/assets/ward_distribution.png)
+<!-- ![Total Pothole Requests by Ward (2021-2025)](https://github.com/Erdos-Projects/spring-2026-dc-311/edit/pub/assets/ward_distribution.png) -->
 
 Raw DC 311 CSV files are expected as annual exports (for example, in a local `csv_data/` folder or another user-provided path). The preprocessing entrypoint is:
 - `data/preprocess_311.py`
@@ -133,7 +134,7 @@ Binomial variants.
 
 3. A hybrid XGB-SARIMA model that trains an XG Boost model and then fits a SARIMA model to the residuals to capture any remaining temporal autocorrelation.
 
-We discuss the loading and training of these models in [this notebook](modeling.ipynb). A key aspect of our modeling approach is that our models are autoregressive--i.e they use lagged values of the target variable as features. We therefore also [discuss](4_modeling.ipynb) the issues with data leakage and the approach we took to mitigate it. 
+We discuss the loading, training, and evaluation of these models in [this notebook](4_modeling.ipynb). A key aspect of our modeling approach is that our models are autoregressive--i.e they use lagged values of the target variable as features. We also discuss the issues with data leakage and the approach we took to mitigate it.
 
 ### A note on hyperparameter tuning 
 
@@ -151,13 +152,13 @@ python3 modeling/search/sweep.py +sweep_run=default sweep_run.sweep_id{YOUR_SWEE
 
 A hyperparameter sweep for the Poisson GLM with the 7-day forecast looks like this in the WandB dashboard:
 
-![Bayesian Optimization Sweep on the lag, rolling window size, and autoregression length hyperparameters--note that the optimization starts to converge to a lower MAE as the sweep progresses](assets/poisson_sweep.png)
+![Bayesian Optimization Sweep on the lag, rolling window size, and autoregression length hyperparameters--note that the optimization starts to converge to a lower MAE as the sweep progresses](assets/hyperparameter_search.png)
 
 ### Best Hyperparameters by Model and Forecast Horizon
 
 The optimal feature engineering hyperparameters identified through Bayesian search for each model and forecast horizon ($d$) are summarized below:
 
-![Best hyperparameters, averaged over the models by Model and Forecast Horizon](assets/best_hyperparameters.png)
+![Best hyperparameters, averaged over the models by Model and Forecast Horizon](assets/hyperparameter_averages.png)
 
 ### Model training process
 
@@ -177,45 +178,32 @@ Look up Hydra override syntax [here](https://hydra.cc/docs/next/advanced/overrid
 
 ## 4. Model Performance Results
 
-Test set performance across all models and forecast horizons:
+The current results notebook evaluates strict no-leakage runs on the fixed `first_week_2025` split. The test window is `2025-01-01` to `2025-01-07`, with one daily forecast row per date (`d=1`). The comparison includes `xgb`, `xgb_sarimax`, `poisson_glm`, `negbin_glm`, `naive_last_year`, and `naive_last_week`.
 
-**Results for d=1 (1-day forecast)**
+| Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance |
+|---|---:|---:|---:|---:|---:|
+| xgb | 0.8453 | 1.3013 | 0.3328 | 0.4488 | 1.4202 |
+| xgb_sarimax | 0.8527 | 1.3027 | 0.3396 | 0.4505 | 1.4224 |
+| poisson_glm | 1.3195 | 1.6757 | 0.2299 | 0.3482 | 2.2514 |
+| negbin_glm | 1.3374 | 1.6824 | 0.2398 | 0.3503 | 2.2583 |
+| naive_last_year | 1.4286 | 1.8516 | 0.7500 | 0.9354 | 1.7058 |
+| naive_last_week | 1.6480 | 2.0128 | 0.6250 | 0.7500 | 33.2508 |
 
-| Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance | Correlation |
-|-------|-----|------|--------------|---------------|---------------------|------------|
-| GLM Negative Binomial | 1.3525 | 1.85 | 0.488 | 0.5542 | 1.8282 | 0.4859 |
-| GLM Poisson | 1.3641 | 1.8761 | 0.4897 | 0.5569 | 1.8747 | 0.4474 |
-| XGBoost | 1.3852 | 1.9379 | 0.4991 | 0.5841 | 2.1971 | 0.4034 |
-| XGBoost SARIMAX | 1.4025 | 1.9684 | 0.5089 | 0.6138 | 2.3055 | 0.3473 |
+The naive baseline checks confirm that `naive_last_year` exactly matches its calendar-reference rule for all 7 test days, while `naive_last_week` matches its rule for 6 of 7 test days.
 
-**Results for d=5 (5-day forecast)**
-| Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance | Correlation |
-|-------|-----|------|--------------|---------------|---------------------|------------|
-| GLM Poisson | 4.837 | 6.5543 | 0.4744 | 0.6559 | 4.4537 | 0.6164 |
-| GLM Negative Binomial | 4.8353 | 6.5567 | 0.4752 | 0.6577 | 4.4273 | 0.6289 |
-| XGBoost SARIMAX | 4.8113 | 6.4203 | 0.5052 | 0.7728 | 4.4361 | 0.6233 |
-| XGBoost | 5.0324 | 6.7125 | 0.5126 | 0.722 | 5.2522 | 0.5882 |
-
-**Results for d=7 (7-day forecast)**
-
-| Model | MAE | RMSE | Rel. MAE (%) | Rel. RMSE (%) | Poisson Deviance | Correlation |
-|-------|-----|------|--------------|---------------|---------------------|------------|
-| GLM Negative Binomial | 6.5126 | 8.731 | 0.4194 | 0.5133 | 5.5558 | 0.6953 |
-| GLM Poisson | 6.5728 | 8.7486 | 0.4282 | 0.5273 | 5.7673 | 0.6629 |
-| XGBoost | 6.5903 | 8.6644 | 0.45 | 0.5884 | 5.9539 | 0.7005 |
-| XGBoost SARIMAX | 6.5989 | 8.6049 | 0.453 | 0.5669 | 6.0111 | 0.6705 |
+Because this final test window covers only one calendar week, these results should be interpreted as a strict no-leakage snapshot rather than a full estimate of year-round generalization.
 
 ### Interpreting the results
 
-Across both error (MAE) and alignment with signal shape (correlation), the GLM Negative Binomial model is the strongest overall choice. It achieves the best MAE at $d=1$ and $d=7$, and at $d=5$ it remains extremely close to the top MAE while also having the highest correlation among the four models.
+On the current strict first-week-2025 evaluation, `xgb` is the best model by both MAE and RMSE. The `xgb_sarimax` hybrid is very close, but it does not improve over plain `xgb` on this short evaluation window.
 
-The hyperparameter plot also highlights a clear pattern in the autoregressive term: $k_{AR}=0$ is selected in 10 of 12 best configurations. Only two cases ($d=1$ for XGBoost and XGBoost SARIMAX) prefer nonzero autoregressive depth. This repeated selection of $k_{AR}=0$ suggests that direct autoregressive history is usually not required once lagged/rolling weather and calendar features are included.
+The loaded runs in `5_results.ipynb` use the same feature configuration across all six models: $d=1$, $d_p=15$, $l_p=10$, $d_s=15$, $l_s=0$, $d_f=15$, $l_f=0$, and $k_{AR}=0$. This means the current first-week-2025 comparison uses daily one-step forecasts without direct autoregressive target lags.
 
-Overall, the baseline count-model family remains highly competitive, with the baseline Negative Binomial model still emerging as the best practical model in this study. We also provide a Jupyter notebook (`results.ipynb`) that loads the trained models and generates performance comparison tables and visualizations across the different models and forecast horizons.
+Overall, the GLM models remain useful, interpretable baselines, but they are no longer the top performers in the latest notebook results. The naive baselines are included as leakage-checked references, and the latest performance comparison is generated in `5_results.ipynb`.
 
 ## Conclusion
 
-This project demonstrates that relatively simple count-based models, when paired with carefully engineered lagged weather features, can produce useful short-horizon forecasts of pothole service demand. In particular, the Negative Binomial GLM remained a strong and stable baseline across horizons. At the same time, the current pipeline should be viewed as a first step rather than a production-ready citywide forecasting system.
+This project demonstrates that models using carefully engineered lagged weather and calendar features can produce useful short-horizon forecasts of pothole service demand. In the latest strict first-week-2025 evaluation, XGBoost achieves the strongest MAE and RMSE, while GLM count models remain interpretable baselines. At the same time, the current pipeline should be viewed as a first step rather than a production-ready citywide forecasting system.
 
 ## Limitations and Future Work
 
@@ -260,21 +248,18 @@ spring-2026-dc-311/
 |-- pyproject.toml
 |-- requirements.txt
 |-- environment.yml
-|-- data_acquisition.ipynb
-|-- eda_feature_params.ipynb
-|-- load_process.ipynb
-|-- modeling.ipynb
-|-- model_eva_rong.ipynb
-|-- results.ipynb
-|-- test.ipynb
-|-- weather_integration_2023.ipynb
+|-- 1_data_acquisition.ipynb
+|-- 2_visualize_time_series.ipynb
+|-- 3_eda.ipynb
+|-- 4_modeling.ipynb
+|-- 5_results.ipynb
 |-- assets/
-|   |-- best_hyperparameters.png
-|   |-- poisson_sweep.png
+|   |-- hyperparameter_averages.png
+|   |-- hyperparameter_search.png
+|   |-- lag_discovery.png
+|   |-- service_requests_distribution.png
 |-- configs/
 |   |-- config.yaml
-|   |-- first_try.yaml
-|   |-- xgb_sarimax_debug.yaml
 |   |-- debug/
 |   |   `-- default.yaml
 |   |-- features/
@@ -292,21 +277,22 @@ spring-2026-dc-311/
 |   |   |-- best_xgb_sarimax_d_7.yaml
 |   |   `-- default.yaml
 |   |-- model/
-|   |   |-- baseline.yaml
 |   |   |-- glm.yaml
 |   |   |-- glm_poisson.yaml
 |   |   |-- lgbm.yaml
 |   |   |-- mymodel.yaml
+|   |   |-- naive_weekly.yaml
+|   |   |-- naive_yearly.yaml
 |   |   |-- xgb.yaml
 |   |   `-- xgb_sarimax.yaml
-|   |-- search/
-|   |   |-- bayes.yaml
-|   |   `-- grid.yaml
 |   |-- split/
 |   |   |-- default.yaml
+|   |   |-- first_week_2025.yaml
 |   |   `-- temporal.yaml
 |   |-- sweep/
-|   `-- sweep_run/
+|   |-- sweep_run/
+|   |-- wandb/
+|   `-- ward/
 |-- data/
 |   |-- preprocess_311.py
 |   |-- weather_fetch.py
@@ -324,8 +310,5 @@ spring-2026-dc-311/
 |   |-- models/
 |   `-- search/
 |-- outputs/
-|-- results/
-`-- docs/
+`-- results/
 ```
-
-
