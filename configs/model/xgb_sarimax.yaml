@@ -6,6 +6,7 @@ n_estimators: 300
 learning_rate: 0.05
 max_depth: 6
 objective: "count:poisson"
+device: "cpu"
 
 # SARIMAX orders (from notebook: ARIMA(3,0,2)(1,1,1)[7], AIC=5542.77)
 order: [5, 0, 2]

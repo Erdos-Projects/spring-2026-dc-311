@@ -67,7 +67,7 @@ class XGBModel:
     name = "xgb"
 
     def __init__(self, n_estimators: int = 300, learning_rate: float = 0.05,
-                 max_depth: int = 6, objective: str = "count:poisson", **kwargs):
+                 max_depth: int = 6, objective: str = "count:poisson", device: str = "cpu", **kwargs):
         try:
             from xgboost import XGBRegressor
         except ImportError as e:
@@ -79,6 +79,7 @@ class XGBModel:
             max_depth=max_depth,
             objective=objective,
             verbosity=0,
+            device=device,
         )
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "XGBModel":

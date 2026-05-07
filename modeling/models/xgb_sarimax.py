@@ -99,6 +99,7 @@ class xgb_sarimax:
         order=(3, 0, 2),
         seasonal_order=(1, 1, 1, 7),
         auto_order: bool = False,
+        device: str = "cpu",
         **kwargs,
     ):
         self.order = tuple(order)
@@ -111,6 +112,7 @@ class xgb_sarimax:
             max_depth=max_depth,
             objective=objective,
             verbosity=0,
+            device=device,
         )
         self._sarimax_result = None
 

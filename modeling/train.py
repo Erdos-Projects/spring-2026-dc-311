@@ -169,19 +169,19 @@ def train(cfg: DictConfig) -> dict:
             config=OmegaConf.to_container(cfg, resolve=True),
             tags=[cfg.ward.name, cfg.model.name],
         )
-
+    breakpoint()
     pothole_df, weather_df = build_daily(cfg) # build the daily series 
     feat_df = assemble_features(pothole_df, weather_df, cfg.features) 
     feat_df = make_split(feat_df, cfg.split, cfg.features) # split the data into train, val, and test sets
     feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
-
+    breakpoint()
     train_df = feat_df[feat_df["split"] == "train"] # get the train set
     val_df = feat_df[feat_df["split"] == "val"] # get the val set
     train_val_df = feat_df[feat_df["split"].isin(["train", "val"])] # get the train and val set
-
+    breakpoint()
     X_train = train_df[feature_cols] # get the features for the train set
     y_train = train_df["Y"] 
-
+    breakpoint()
     if cfg.debug.verbose:
         print(f"Feature matrix shape : {feat_df.shape}")
         print(f"Train / val / test   : {len(train_df)} / {len(val_df)} / "
@@ -196,7 +196,7 @@ def train(cfg: DictConfig) -> dict:
         horizon_h=horizon_h,
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
-
+    breakpoint()
     # ── Log CV metrics to wandb ───────────────────────────────────────────────
     if cfg.wandb.enabled:
         fold_maes  = cv_metrics.pop("_fold_mae")
@@ -225,13 +225,13 @@ def train(cfg: DictConfig) -> dict:
         if cfg.wandb.enabled:
             wandb.finish()
         return cv_metrics
-
+    breakpoint()
     # ── Final fit on train + val ──────────────────────────────────────────────
     X_tv = train_val_df[feature_cols]
     y_tv = train_val_df["Y"] # get the target for the train and val set
     model = build_model(cfg.model) # build the model
     model.fit(X_tv, y_tv) # fit the model on the train and val set
-
+    breakpoint()
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(
         _prediction_frame(model, val_df[feature_cols], val_df["Y"]),
