@@ -1,0 +1,56 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+evaluate:
+  horizon_h: 7
+features:
+  d: 5
+  d_f: 15
+  d_p: 15
+  d_s: 15
+  k_AR: 5
+  l_f: 0
+  l_p: 10
+  l_s: 0
+leakage:
+  split_method: temporal
+  target_boundary_purge: true
+  time_series_mode: true
+load_model: null
+model:
+  _target_: modeling.models.xgb_sarimax.xgb_sarimax
+  auto_order: true
+  device: cuda
+  learning_rate: 0.05
+  max_depth: 6
+  n_estimators: 300
+  name: xgb_sarimax
+  objective: reg:absoluteerror
+  order:
+  - 5
+  - 0
+  - 2
+  seasonal_order:
+  - 0
+  - 0
+  - 1
+  - 7
+model_name: xgb_sarimax
+model_path: results/ward3_xgb_sarimax_20200601_20251231_20260508_4d23cb14/model.pkl
+root: .
+run_id: 20260508_4d23cb14
+split:
+  method: temporal
+  test_frac: 0.15
+  val_frac: 0.15
+wandb:
+  enabled: false
+  project: DC-311-Pothole-Prediction
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20210101_20251231.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20200601_20251231.parquet
+wx_range: '20200601_20251231'

@@ -176,8 +176,10 @@ class xgb_sarimax:
 
         for block_start in block_starts:
             block_end = min(block_start + block_size, len(X))
+            # the horizon loop: i will be the row index of X, not of the block! 
             for i in range(block_start, block_end):
-                block_offset = i - block_start
+                # the autoregressive loop
+                block_offset = i - block_start # 0 <= block offset < horizon_h
                 for k in range(1, min(block_offset, k_AR) + 1):
                     col = f"pothole_lag{k}"
                     if col in X_work.columns:
