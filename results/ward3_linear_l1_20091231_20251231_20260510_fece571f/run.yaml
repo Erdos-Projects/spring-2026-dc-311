@@ -1,0 +1,50 @@
+debug:
+  dry_run: false
+  inspect: null
+  verbose: false
+evaluate:
+  horizon_h: null
+features:
+  d: 1
+  d_f: 15
+  d_p: 15
+  d_s: 15
+  d_sm07: 15
+  d_sm728: 15
+  k_AR: 0
+  l_f: 0
+  l_p: 10
+  l_s: 0
+  l_sm07: 0
+  l_sm728: 0
+leakage:
+  split_method: temporal
+  target_boundary_purge: true
+  time_series_mode: true
+load_model: null
+model:
+  _target_: modeling.models.linear.RegularizedLinearModel
+  alpha: 1.0
+  fit_intercept: true
+  max_iter: 10000
+  name: linear_l1
+  penalty: l1
+  standardize: true
+model_name: linear_l1
+model_path: results/ward3_linear_l1_20091231_20251231_20260510_fece571f/model.pkl
+root: .
+run_id: 20260510_fece571f
+split:
+  method: temporal
+  test_frac: 0.01
+  val_frac: 0.05
+wandb:
+  enabled: false
+  project: DC-311-Pothole-Prediction
+ward:
+  name: ward3
+  raw_311:
+  - ./data/311_data/ward3_potholes_20090820_20260503.parquet
+  ward_label: Ward 3
+  weather_cache: ./data/weather_cache/weather_ward3_20100101_20251231.parquet
+wx_range: '20091231_20251231'

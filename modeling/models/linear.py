@@ -4,6 +4,8 @@ from sklearn.linear_model import Lasso, Ridge
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
+from modeling.models.utils import predict_in_blocks
+
 
 class RegularizedLinearModel:
     """Regularized linear regression with user-selected L1 or L2 penalty."""
@@ -70,8 +72,28 @@ class RegularizedLinearModel:
     ) -> np.ndarray:
         if self._model is None:
             raise RuntimeError("Call fit() before predict().")
-        preds = self._model.predict(X.astype(float))
-        return np.clip(preds, 0, None)
+
+        ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        if not recursive or len(ar_cols) == 0:
+            preds = self._model.predict(X.astype(float))
+            return np.clip(preds, 0, None)
+
+        if horizon_h is not None:
+            return predict_in_blocks(self, X, horizon_h)
+
+        k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
+        X_work = X.copy().astype(float)
+        print(f"Using recursive prediction with k_AR = {k_AR}")
+        preds = []
+        for i in range(len(X)):
+            if i > 0:
+                for k in range(1, min(i, k_AR) + 1):
+                    col = f"pothole_lag{k}"
+                    if col in X_work.columns:
+                        X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
+            pred_i = self._model.predict(X_work.iloc[[i]])[0]
+            preds.append(max(0.0, pred_i))
+        return np.array(preds)
 
     @property
     def coef_(self) -> np.ndarray:
