@@ -1,0 +1,7 @@
+_target_: modeling.models.linear.RegularizedLinearModel
+name: linear_l2
+penalty: l2
+alpha: 1.0
+fit_intercept: true
+standardize: true
+max_iter: 10000

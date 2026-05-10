@@ -1,0 +1,7 @@
+_target_: modeling.models.sarima.SARIMAModel
+name: sarima
+order: [1, 0, 0]
+seasonal_order: [0, 0, 0, 0]
+trend: null
+enforce_stationarity: true
+enforce_invertibility: true

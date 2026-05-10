@@ -24,16 +24,6 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
 from modeling.split import make_split
 
-
-def _prediction_frame(model, X, y):
-    """Append Y only for naive lookup baselines, leaving learned models unchanged."""
-    if not model.name.startswith("naive_"):
-        return X
-    X_pred = X.copy()
-    X_pred["Y"] = y.values
-    return X_pred
-
-
 def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1") -> None:
     sweep_id = cfg.sweep_run.sweep_id
     if not sweep_id:
@@ -77,9 +67,11 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
                 fitted.fit(train_df[feature_cols], train_df["Y"])
                 horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
                 preds = fitted.predict(
-                    _prediction_frame(fitted, val_df[feature_cols], val_df["Y"]),
+                    val_df[feature_cols],
                     recursive=True,
                     horizon_h=horizon_h,
+                    assimilate=True,
+                    Ys=val_df["Y"],
                 )
 
                 run.log({

@@ -1,6 +1,8 @@
 from modeling.models.baseline import SeasonalNaive
 from modeling.models.glm import NegBinGLM, PoissonGLM
 from modeling.models.gbm import LGBMModel, XGBModel
+from modeling.models.linear import RegularizedLinearModel
+from modeling.models.sarima import SARIMAModel
 from modeling.models.seasonal_baselines import LastWeekNaive, LastYearNaive
 from modeling.models.xgb_sarimax import xgb_sarimax
 
@@ -10,6 +12,8 @@ MODEL_REGISTRY = {
     "modeling.models.glm.PoissonGLM": PoissonGLM,
     "modeling.models.gbm.LGBMModel": LGBMModel,
     "modeling.models.gbm.XGBModel": XGBModel,
+    "modeling.models.linear.RegularizedLinearModel": RegularizedLinearModel,
+    "modeling.models.sarima.SARIMAModel": SARIMAModel,
     "modeling.models.seasonal_baselines.LastWeekNaive": LastWeekNaive,
     "modeling.models.seasonal_baselines.LastYearNaive": LastYearNaive,
     "modeling.models.xgb_sarimax.xgb_sarimax": xgb_sarimax,

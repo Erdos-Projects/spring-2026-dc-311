@@ -1,5 +1,5 @@
 defaults:
-  - ward: ward3_2021_2025
+  - ward: ward3_2009_2026
   - features: default
   - model: xgb
   - split: temporal

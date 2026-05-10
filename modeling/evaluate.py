@@ -31,13 +31,14 @@ from modeling.split import make_split
 
 
 def _prediction_cols(model, feature_cols: list[str]) -> list[str]:
-    """Naive baselines use true Y to update their lookup table during prediction."""
-    return feature_cols + (["Y"] if model.name.startswith("naive_") else [])
+    """All models receive feature columns only; truth is passed separately as Ys."""
+    return feature_cols
 
 
 def _predict_for_eval(
     model,
     X_test: pd.DataFrame,
+    Ys=None,
     horizon_h: int | None = None,
 ) -> np.ndarray:
     """Predict through the common model API."""
@@ -45,6 +46,8 @@ def _predict_for_eval(
         X_test,
         recursive=True,
         horizon_h=horizon_h,
+        assimilate=True,
+        Ys=Ys,
     )
 
 
@@ -147,6 +150,7 @@ def evaluate(cfg: DictConfig) -> dict:
     preds = _predict_for_eval(
         model,
         X_test,
+        Ys=y_test,
         horizon_h=horizon_h,
     )
     breakpoint()

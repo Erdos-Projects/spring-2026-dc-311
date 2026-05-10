@@ -32,18 +32,6 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
 from modeling.split import make_split
 
-
-def _prediction_frame(model, X: pd.DataFrame, y: pd.Series | None = None) -> pd.DataFrame:
-    """Append Y only for naive lookup baselines, leaving learned models unchanged."""
-    if not model.name.startswith("naive_"):
-        return X
-    if y is None:
-        raise ValueError("Naive baseline prediction requires y values for lookup updates.")
-    X_pred = X.copy()
-    X_pred["Y"] = y.values
-    return X_pred
-
-
 def cross_val(
     cfg_model,
     X: pd.DataFrame,
@@ -64,9 +52,11 @@ def cross_val(
         model = build_model(cfg_model)
         model.fit(X_tr, y_tr)
         preds = model.predict(
-            _prediction_frame(model, X_v, y_v),
+            X_v,
             recursive=True,
             horizon_h=horizon_h,
+            assimilate=True,
+            Ys=y_v,
         )
         fold_mae.append(mae(y_v.values, preds))
         fold_rmse.append(rmse(y_v.values, preds))
@@ -240,9 +230,11 @@ def train(cfg: DictConfig) -> dict:
     breakpoint()
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(
-        _prediction_frame(model, val_df[feature_cols], log1x(val_df["Y"])),
+        val_df[feature_cols],
         recursive=True,
         horizon_h=horizon_h,
+        assimilate=True,
+        Ys=log1x(val_df["Y"]),
     )
     val_metrics = {
         "val_mae":              float(mae(log1x(val_df["Y"].values), val_preds)), # calculate the MAE for the val set

@@ -115,10 +115,12 @@ class xgb_sarimax:
             device=device,
         )
         self._sarimax_result = None
+        self._residual_history = None
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "xgb_sarimax":
         self._xgb.fit(X, y)
-        residuals = y.values - self._xgb.predict(X)
+        residuals = np.asarray(y.values - self._xgb.predict(X), dtype=float)
+        self._residual_history = residuals.copy()
 
         if self.auto_order:
 
@@ -151,9 +153,14 @@ class xgb_sarimax:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
         **kwargs,
     ) -> np.ndarray:
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        if assimilate and Ys is not None and horizon_h is not None:
+            return self._predict_blocks_assimilating(X, Ys, horizon_h, ar_cols)
+
         if not recursive or len(ar_cols) == 0:
             xgb_pred = self._xgb.predict(X)
             correction = self._sarimax_result.forecast(steps=len(X))
@@ -187,6 +194,60 @@ class xgb_sarimax:
                 xgb_i = self._xgb.predict(X_work.iloc[[i]])[0]
                 preds.append(xgb_i + correction[i])
         return np.array(preds)
+
+    def _predict_blocks_assimilating(
+        self,
+        X: pd.DataFrame,
+        Ys,
+        horizon_h: int,
+        ar_cols: list[str],
+    ) -> np.ndarray:
+        if self._sarimax_result is None:
+            raise RuntimeError("Call fit() before predict().")
+
+        h = validate_horizon_h(horizon_h)
+        y_values = pd.Series(Ys).astype(float).reset_index(drop=True)
+        if len(y_values) != len(X):
+            raise ValueError(
+                f"Ys length {len(y_values)} does not match X length {len(X)}."
+            )
+
+        X_work = X.copy()
+        preds = []
+        residual_state = self._sarimax_result
+
+        k_AR = 0
+        if ar_cols:
+            k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
+
+        for block_start in range(0, len(X), h):
+            block_end = min(block_start + h, len(X))
+            block_len = block_end - block_start
+            corrections = np.asarray(residual_state.forecast(steps=block_len), dtype=float)
+
+            block_xgb_preds = []
+            block_preds = []
+
+            for i in range(block_start, block_end):
+                block_offset = i - block_start
+
+                for k in range(1, min(block_offset, k_AR) + 1):
+                    col = f"pothole_lag{k}"
+                    if col in X_work.columns:
+                        X_work.iloc[i, X_work.columns.get_loc(col)] = block_preds[block_offset - k]
+
+                xgb_i = float(self._xgb.predict(X_work.iloc[[i]])[0])
+                pred_i = xgb_i + corrections[block_offset]
+
+                block_xgb_preds.append(xgb_i)
+                block_preds.append(pred_i)
+                preds.append(pred_i)
+
+            y_block = y_values.iloc[block_start:block_end].to_numpy(dtype=float)
+            true_resids = y_block - np.asarray(block_xgb_preds, dtype=float)
+            residual_state = residual_state.append(true_resids, refit=False)
+
+        return np.asarray(preds)
 
     @property
     def feature_importances_(self) -> np.ndarray:

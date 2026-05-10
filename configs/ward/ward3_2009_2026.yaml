@@ -1,0 +1,5 @@
+name: ward3
+ward_label: "Ward 3"
+raw_311:
+  - ${root}/data/311_data/ward3_potholes_20090820_20260503.parquet
+weather_cache: ${root}/data/weather_cache/weather_ward3_20100101_20251231.parquet

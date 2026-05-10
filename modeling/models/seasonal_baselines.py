@@ -46,18 +46,29 @@ class _LagNaiveBase:
         *,
         recursive: bool = True,
         horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
         **kwargs,
     ) -> np.ndarray:
         if self._mean_y is None:
             raise RuntimeError("Call fit() before predict().")
+
+        y_values = None
+        if Ys is not None:
+            y_values = pd.Series(Ys).astype(float).reset_index(drop=True)
+            if len(y_values) != len(X):
+                raise ValueError(
+                    f"Ys must have the same length as X. Got {len(y_values)} "
+                    f"values for {len(X)} rows."
+                )
 
         preds = np.zeros(len(X), dtype=float)
         for i, (_, row) in enumerate(X.iterrows()):
             key = self._make_key(row)
             preds[i] = max(0.0, float(self.lookup_table.get(key, self._fallback_value())))
 
-            if self.update_col in row and pd.notna(row[self.update_col]):
-                self.lookup_table[key] = float(row[self.update_col])
+            if assimilate and y_values is not None and pd.notna(y_values.iloc[i]):
+                self.lookup_table[key] = float(y_values.iloc[i])
         return preds
 
 
