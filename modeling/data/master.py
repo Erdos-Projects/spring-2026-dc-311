@@ -6,7 +6,7 @@ Returns a tuple (pothole_df, weather_df):
     pothole_df  – date, pothole_count
                   Analysis window only (2023-01-01 → 2023-12-31).
 
-    weather_df  – date, daily_precip, daily_snow, daily_ftc,
+    weather_df  – date, daily_precip, daily_snow, daily_ftc, sm07, sm728,
                   sin_doy, cos_doy, is_weekend, dow_Mon … dow_Sat.
                   Covers the full hourly-data range (including the
                   pre-analysis buffer) so that rolling lookback features
@@ -111,6 +111,8 @@ def _aggregate_to_daily(df_hourly: pd.DataFrame) -> pd.DataFrame:
             tmean_c=("temperature_2m", "mean"),
             precip_mm=("precipitation", "sum"),
             snow_cm=snow_agg,
+            sm07=("soil_moisture_0_to_7cm", "mean"),
+            sm728=("soil_moisture_7_to_28cm", "mean"),
         )
         .reset_index()
     )
@@ -149,7 +151,7 @@ def build_daily(cfg: DictConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     daily_ftc_dict = compute_daily_ftc(df_hourly)
 
     # Build weather_df — full date range, no pothole data
-    weather_df = df_daily[["date", "precip_mm", "snow_cm"]].rename(
+    weather_df = df_daily[["date", "precip_mm", "snow_cm", "sm07", "sm728"]].rename(
         columns={"precip_mm": "daily_precip", "snow_cm": "daily_snow"}
     ).copy()
     weather_df["daily_ftc"] = weather_df["date"].map(lambda d: daily_ftc_dict.get(d, 0))

@@ -37,16 +37,17 @@ def assemble_features(
         Analysis-window pothole counts — columns: date, pothole_count.
     weather_df : pd.DataFrame
         Full-range daily weather (includes pre-analysis buffer) — columns:
-        date, daily_precip, daily_snow, daily_ftc, sin_doy, cos_doy,
-        is_weekend, dow_Mon … dow_Sat.
+        date, daily_precip, daily_snow, daily_ftc, sm07, sm728, sin_doy,
+        cos_doy, is_weekend, dow_Mon … dow_Sat.
     cfg_features : DictConfig | dict | SimpleNamespace
-        Feature parameters: d, d_p, l_p, d_s, l_s, d_f, l_f, k_AR.
+        Feature parameters: d, d_p, l_p, d_s, l_s, d_f, l_f, d_sm07,
+        l_sm07, d_sm728, l_sm728, k_AR.
 
     Returns
     -------
     pd.DataFrame
         One row per *usable* day (NaN rows dropped), with columns:
-        date, Y, precip_roll, snow_roll, ftc_roll,
+        date, Y, precip_roll, snow_roll, ftc_roll, sm07_roll, sm728_roll,
         pothole_lag1 … pothole_lag{k_AR},
         sin_doy, cos_doy, is_weekend, dow_Mon … dow_Sat.
     """
@@ -58,14 +59,20 @@ def assemble_features(
     l_s  = int(p.l_s)
     d_f  = int(p.d_f)
     l_f  = int(p.l_f)
-    k_AR = int(p.k_AR)
+    d_sm07  = int(p.d_sm07)
+    l_sm07  = int(p.l_sm07)
+    d_sm728 = int(p.d_sm728)
+    l_sm728 = int(p.l_sm728)
+    k_AR    = int(p.k_AR)
 
     # ── Weather rolling features (computed on full range for Dec context) ─────
     w = weather_df.copy()
     w["precip_roll"] = w["daily_precip"].rolling(d_p).sum().shift(l_p)
     w["snow_roll"]   = w["daily_snow"].rolling(d_s).mean().shift(l_s)
     w["ftc_roll"]    = w["daily_ftc"].rolling(d_f).sum().shift(l_f)
-    w = w.drop(columns=["daily_precip", "daily_snow", "daily_ftc"])
+    w["sm07_roll"]   = w["sm07"].rolling(d_sm07).mean().shift(l_sm07)
+    w["sm728_roll"]  = w["sm728"].rolling(d_sm728).mean().shift(l_sm728)
+    w = w.drop(columns=["daily_precip", "daily_snow", "daily_ftc", "sm07", "sm728"])
 
     # Filter to analysis window and merge onto pothole spine
     analysis_start = pothole_df["date"].min()

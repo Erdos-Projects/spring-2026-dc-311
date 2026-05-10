@@ -5,4 +5,8 @@ d_s: 15 # snow_depth rolling window
 l_s: 0 # snow_depth lag
 d_f: 15 # freeze-thaw rolling window
 l_f: 0 # freeze-thaw lag
+d_sm07: 15 # soil moisture 0-7 cm rolling window
+l_sm07: 0 # soil moisture 0-7 cm lag
+d_sm728: 15 # soil moisture 7-28 cm rolling window
+l_sm728: 0 # soil moisture 7-28 cm lag
 k_AR: 0 # autoregressive lags (0 = non-autoregressive)

@@ -145,7 +145,13 @@ def save_results(metrics: dict, stem: str) -> Path:
         json.dump(serialisable, f, indent=2)
     return metrics_path
 
+def log1x(x: np.ndarray) -> np.ndarray:
+    """the log 1 + x function"""
+    return np.log1p(x)
 
+def inv_log1x(x: np.ndarray) -> np.ndarray:
+    """the inverse of log1p, i.e. exp(x) - 1"""
+    return np.expm1(x)
 def train(cfg: DictConfig) -> dict:
     """
     Full training pipeline:
@@ -191,7 +197,7 @@ def train(cfg: DictConfig) -> dict:
     # ── K-fold CV ─────────────────────────────────────────────────────────────
     horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
     cv_metrics = cross_val(
-        cfg.model, X_train, y_train,
+        cfg.model, X_train, log1x(y_train),
         k=5,
         horizon_h=horizon_h,
     )
@@ -230,18 +236,18 @@ def train(cfg: DictConfig) -> dict:
     X_tv = train_val_df[feature_cols]
     y_tv = train_val_df["Y"] # get the target for the train and val set
     model = build_model(cfg.model) # build the model
-    model.fit(X_tv, y_tv) # fit the model on the train and val set
+    model.fit(X_tv, log1x(y_tv)) # fit the model on the train and val set
     breakpoint()
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(
-        _prediction_frame(model, val_df[feature_cols], val_df["Y"]),
+        _prediction_frame(model, val_df[feature_cols], log1x(val_df["Y"])),
         recursive=True,
         horizon_h=horizon_h,
     )
     val_metrics = {
-        "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set
-        "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set
-        "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, val_preds)), # calculate the Poisson deviance for the val set
+        "val_mae":              float(mae(log1x(val_df["Y"].values), val_preds)), # calculate the MAE for the val set
+        "val_rmse":             float(rmse(log1x(val_df["Y"].values), val_preds)), # calculate the RMSE for the val set
+        "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, inv_log1x(val_preds))), # calculate the Poisson deviance for the val set
     }
 
     if cfg.wandb.enabled:

@@ -186,8 +186,9 @@ def get_hourly_weather(
     end_date: str,
 ) -> pd.DataFrame:
     """
-    Fetch hourly temperature_2m, precipitation, and snow_depth from the
-    Open-Meteo archive API for the given coordinates and date range.
+    Fetch hourly temperature, precipitation, snow depth, rain, and soil
+    moisture from the Open-Meteo archive API for the given coordinates and
+    date range.
 
     Parameters
     ----------
@@ -201,19 +202,27 @@ def get_hourly_weather(
     Returns
     -------
     pd.DataFrame
-        Hourly rows with columns: date (America/New_York tz-aware),
-        temperature_2m (°C), precipitation (mm), snow_depth (m).
+        Hourly rows with columns: date (America/New_York tz-aware) plus the
+        requested Open-Meteo hourly variables.
     """
     cache_session = requests_cache.CachedSession(".cache", expire_after=-1)
     retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
     openmeteo = openmeteo_requests.Client(session=retry_session)
 
+    hourly_vars = [
+        "temperature_2m",
+        "snow_depth",
+        "soil_moisture_0_to_7cm",
+        "soil_moisture_7_to_28cm",
+        "precipitation",
+        "rain",
+    ]
     params = {
         "latitude":   lat,
         "longitude":  lon,
         "start_date": start_date,
         "end_date":   end_date,
-        "hourly":     ["temperature_2m", "precipitation", "snow_depth"],
+        "hourly":     hourly_vars,
         "timezone":   "America/New_York",
     }
     response = openmeteo.weather_api(
@@ -222,19 +231,19 @@ def get_hourly_weather(
 
     hourly = response.Hourly()
     # Convert UTC epoch → America/New_York timestamps (preserves DST transitions).
-    df = pd.DataFrame(
-        {
-            "date": pd.date_range(
-                start=pd.to_datetime(hourly.Time(), unit="s", utc=True).tz_convert("America/New_York"),
-                end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True).tz_convert("America/New_York"),
-                freq=pd.Timedelta(seconds=hourly.Interval()),
-                inclusive="left",
-            ),
-            "temperature_2m": hourly.Variables(0).ValuesAsNumpy(),
-            "precipitation":  hourly.Variables(1).ValuesAsNumpy(),
-            "snow_depth":     hourly.Variables(2).ValuesAsNumpy(),
-        }
-    )
+    hourly_data = {
+        name: hourly.Variables(i).ValuesAsNumpy()
+        for i, name in enumerate(hourly_vars)
+    }
+    df = pd.DataFrame({
+        "date": pd.date_range(
+            start=pd.to_datetime(hourly.Time(), unit="s", utc=True).tz_convert("America/New_York"),
+            end=pd.to_datetime(hourly.TimeEnd(), unit="s", utc=True).tz_convert("America/New_York"),
+            freq=pd.Timedelta(seconds=hourly.Interval()),
+            inclusive="left",
+        ),
+        **hourly_data,
+    })
     return df
 
 
@@ -243,7 +252,14 @@ def get_hourly_weather(
 # ---------------------------------------------------------------------------
 
 API_URL           = "https://archive-api.open-meteo.com/v1/archive"
-DEFAULT_VARIABLES = ["temperature_2m", "precipitation", "snow_depth"]
+DEFAULT_VARIABLES = [
+    "temperature_2m",
+    "snow_depth",
+    "soil_moisture_0_to_7cm",
+    "soil_moisture_7_to_28cm",
+    "precipitation",
+    "rain",
+]
 DEFAULT_TIMEZONE  = "America/New_York"
 
 
@@ -282,8 +298,8 @@ def write_query_config(
     timezone : str
         IANA timezone string passed to the Open-Meteo API.
     variables : list[str] | None
-        Hourly variables to request.  Defaults to
-        ``["temperature_2m", "precipitation", "snow_depth"]``.
+        Hourly variables to request. Defaults to temperature, snow depth, two
+        soil moisture depths, precipitation, and rain.
 
     Returns
     -------
