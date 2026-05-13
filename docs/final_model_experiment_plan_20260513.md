@@ -10,6 +10,8 @@
 - [Expected Outputs](#expected-outputs)
 - [Decision Rules](#decision-rules)
 - [Calibration Follow-Up](#calibration-follow-up)
+- [Data / Soil Moisture / Horizon Ablation Study](#data--soil-moisture--horizon-ablation-study)
+- [High-Demand Day Classification / Alerting](#high-demand-day-classification--alerting)
 - [Implementation Checklist](#implementation-checklist)
 - [Notes](#notes)
 
@@ -226,6 +228,211 @@ Required high-demand diagnostics:
 The calibrated comparison should report both uncalibrated and calibrated rows
 so the accuracy/calibration tradeoff is visible.
 
+## Data / Soil Moisture / Horizon Ablation Study
+
+This follow-up tests whether the observed high-demand underprediction is mainly
+caused by limited historical 311/weather examples, missing soil-moisture
+signals, or the inherent noisiness of next-day (`d=1`) raw count prediction.
+
+Script:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.ablation_data_features_horizon
+```
+
+Optional filters:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.ablation_data_features_horizon \
+  --experiments old_2021_weather_d1 long_2009_weather_soil_d1 \
+  --models lgbm_poisson xgb extra_trees \
+  --d-values 1 5 7 \
+  --output-dir results/ablation_data_features_horizon_20260513
+```
+
+Fixed split:
+
+| Split | Requested dates | Leakage rule |
+|---|---|---|
+| Train, short history | `2021-01-01` to `2024-09-30` | keep only rows whose target window ends inside train |
+| Train, long history | `2009-01-01` to `2024-09-30` | keep only rows whose target window ends inside train |
+| Validation | `2024-10-01` to `2024-12-31` | keep only rows whose target window ends inside validation |
+| Test | `2025-01-01` to `2025-12-31` | keep only rows whose target window ends inside test |
+
+Target definition:
+
+`Y_t = sum(P_(t+1), ..., P_(t+d))`
+
+The target remains raw pothole counts. No `log1p` target transforms are used.
+Rows near the end of a split are dropped when `t + d` crosses that split's end
+date. This means the effective test row end date is `2025-12-30` for `d=1`,
+`2025-12-26` for `d=5`, and `2025-12-24` for `d=7`.
+
+No-test-leakage rule:
+
+- Test labels are not used for training, calibration, weighting, threshold
+  selection, or model selection.
+- Weighted top-25% variants compute their high-demand threshold inside the fit
+  split only.
+- Test actual top-25% thresholds are used only for diagnostic reporting.
+
+Core ablation matrix:
+
+| Experiment ID | Train data | Feature set | d | Purpose |
+|---|---|---|---:|---|
+| `old_2021_weather_d1` | 2021-2024 | weather only | 1 | old short-history baseline |
+| `long_2009_weather_d1` | 2009-2024 | weather only | 1 | isolate more historical data |
+| `short_2021_weather_soil_d1` | 2021-2024 | weather + soil | 1 | isolate soil moisture on short history |
+| `long_2009_weather_soil_d1` | 2009-2024 | weather + soil | 1 | test more data plus soil |
+| `long_2009_weather_soil_d5` | 2009-2024 | weather + soil | 5 | test 5-day aggregate stability |
+| `long_2009_weather_soil_d7` | 2009-2024 | weather + soil | 7 | test 7-day aggregate stability |
+
+Models:
+
+- `naive_rolling_mean`
+- `naive_same_dow_rolling_mean`
+- `xgb`
+- `lgbm_poisson`
+- `catboost_poisson`
+- `extra_trees`
+- `lgbm_poisson_weighted_top25_w2`
+- `xgb_sarimax` remains optional only, via explicit request or `--models all`.
+
+Feature handling:
+
+- Weather-only drops `sm07_roll` and `sm728_roll`.
+- Weather+soil keeps `sm07_roll` and `sm728_roll`.
+- Calendar, precipitation, snow, freeze-thaw, and default autoregressive
+  features are otherwise preserved.
+
+Required outputs:
+
+- `results/ablation_data_features_horizon_20260513/summary.csv`
+- `results/ablation_data_features_horizon_20260513/summary.json`
+- `results/ablation_data_features_horizon_20260513/summary.md`
+- Per-experiment/per-model `metrics.json`, `val_predictions.csv`, and
+  `test_predictions.csv`
+- Plots for `test_mae`, `total_count_ratio`, `top25_total_count_ratio`,
+  `high_demand_recall` vs `false_alarm_rate`, and key actual-vs-predicted
+  time series.
+
+## High-Demand Day Classification / Alerting
+
+This standalone Part B reframes the operational problem from exact daily count
+prediction to alerting on unusually high future pothole demand. It is designed
+to answer whether a binary alerting objective catches demand spikes better than
+thresholding smooth count forecasts.
+
+Script:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification
+```
+
+Primary run:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification \
+  --label-mode q75 \
+  --threshold-rule f2 \
+  --models default \
+  --d 1
+```
+
+Fixed split:
+
+| Split | Requested dates | Leakage rule |
+|---|---|---|
+| Train | `2009-01-01` to `2024-09-30` | fit models and compute `q75` label threshold from train only |
+| Validation | `2024-10-01` to `2024-12-31` | choose alert probability thresholds only |
+| Test | `2025-01-01` to `2025-12-31` | final evaluation only |
+
+Target definition:
+
+`Y_t = sum(P_(t+1), ..., P_(t+d))`
+
+The default uses `d=1`; `d=5` and `d=7` are supported as aggregate-demand
+sensitivity runs. Rows whose target window crosses a split end date are dropped
+only from that split. The target stays on raw pothole-count scale; no `log1p`
+target transform is used.
+
+Label definitions:
+
+- `--label-mode q75`: compute `high_demand_threshold` from the train split
+  only, then apply that fixed threshold to validation and test.
+- `--label-mode threshold --threshold 2`: use a fixed business threshold such
+  as `Y >= 2`.
+
+No-test-leakage rule:
+
+- Test labels are used only for final test evaluation.
+- Test labels are not used to define the high-demand threshold.
+- Test labels are not used to choose the alert probability threshold.
+- Test labels are not used for model selection.
+
+Default alert baselines:
+
+- `naive_previous_high_demand`
+- `naive_rolling_mean_alert`
+- `naive_same_dow_rolling_mean_alert`
+- `count_lgbm_threshold_alert`, when Part A count predictions are available
+- `count_extra_trees_threshold_alert`, when Part A count predictions are
+  available
+
+Default ML classifiers:
+
+- `logistic_l1_classifier`
+- `random_forest_classifier`
+- `extra_trees_classifier`
+- `xgb_classifier`
+- `lgbm_classifier`
+- `catboost_classifier`
+
+Model groups:
+
+- `fast`: three naive baselines, `logistic_l1_classifier`, and
+  `extra_trees_classifier`.
+- `default`: all naive/count alert baselines plus all ML classifiers.
+- `all`: same as `default`, with count-threshold baselines included when
+  available.
+
+Validation-only alert threshold rules:
+
+- `f2`: maximize validation F2.
+- `recall70`: maximize precision / minimize false alarms among validation
+  thresholds with recall at least `0.70`; fall back to max recall if needed.
+- `far30`: maximize validation recall with false-alarm rate at most `0.30`;
+  fall back to validation F2 if needed.
+- `alerts_per_month`: choose the threshold closest to a target validation alert
+  frequency.
+
+Required outputs:
+
+- `results/high_demand_classification_20260513/summary.json`
+- `results/high_demand_classification_20260513/summary.csv`
+- `results/high_demand_classification_20260513/summary.md`
+- Per-model `metrics.json`, `validation_predictions.csv`, and
+  `test_predictions.csv`
+- At least one model-comparison plot, plus PR/ROC and top-model timeline plots
+  when available.
+
+Recommended runs:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m compileall modeling
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 1
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode threshold --threshold 2 --threshold-rule f2 --models default --d 1 --output-dir results/high_demand_classification_threshold2_20260513
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule recall70 --models default --d 1 --output-dir results/high_demand_classification_recall70_20260513
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule far30 --models default --d 1 --output-dir results/high_demand_classification_far30_20260513
+```
+
+Optional aggregate-horizon sensitivity runs:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 5 --output-dir results/high_demand_classification_d5_20260513
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 7 --output-dir results/high_demand_classification_d7_20260513
+```
+
 ## Implementation Checklist
 
 - [x] Remove debugger breakpoints from training/evaluation.
@@ -246,6 +453,14 @@ so the accuracy/calibration tradeoff is visible.
 - [x] Implement validation-only calibration variants.
 - [x] Run default comparison with `--include-calibration`.
 - [x] Update results document with calibrated outcomes and risk-aware choices.
+- [x] Add fixed-date data/soil/horizon ablation runner.
+- [x] Run data/soil/horizon ablation study.
+- [x] Update results document with ablation outcomes.
+- [x] Add standalone high-demand classification/alerting runner.
+- [x] Run default q75/F2 alerting experiment with naive alert baselines.
+- [x] Run threshold, recall-prioritized, false-alarm-constrained, and aggregate
+  horizon alerting sensitivity checks.
+- [x] Update results document with alerting outcomes.
 
 ## Notes
 

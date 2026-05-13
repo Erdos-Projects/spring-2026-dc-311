@@ -10,6 +10,8 @@
 - [Calibration Follow-Up Results](#calibration-follow-up-results)
 - [Risk-Aware Selection](#risk-aware-selection)
 - [High-Demand Spike Follow-Up](#high-demand-spike-follow-up)
+- [Data / Soil Moisture / Horizon Ablation Study](#data--soil-moisture--horizon-ablation-study)
+- [High-Demand Day Classification / Alerting](#high-demand-day-classification--alerting)
 - [Best Model Selection](#best-model-selection)
 - [Final Recommendation](#final-recommendation)
 - [Failures and Skipped Models](#failures-and-skipped-models)
@@ -57,6 +59,25 @@ original `lgbm_poisson` while improving total-count ratio from `0.7257` to
 `0.9297`. It still underpredicts peak days. The strongest peak-capture models
 were weighted ExtraTrees variants, but they overpredicted total demand sharply.
 
+The data/soil/horizon ablation completed on the full fixed 2025 test window.
+The strongest `d=1` setup was `long_2009_weather_soil_d1` with `extra_trees`
+(`test_mae=1.6098`), but it remained flagged as underpredicting. More history
+alone improved peak recall but worsened MAE on average; soil moisture hurt the
+short-history setup but helped the long-history setup. Moving to `d=5`/`d=7`
+improved aggregate high-demand recall and top-quartile capture, but it did not
+remove underprediction.
+
+The standalone high-demand classification / alerting experiment also
+completed. With the train-only `q75` label threshold (`Y >= 3`) and
+validation-selected F2 thresholding, `random_forest_classifier` had the best
+test F2 (`0.7875`) and missed only 1 of 150 high-demand test days, but it fired
+too many alerts (`false_alarm_rate=0.9206`, 197 false alarms). Under the
+practical `false_alarm_rate <= 0.30` rule, the best alert was the
+`naive_same_dow_rolling_mean_alert` baseline (`test_f2=0.6653`,
+`recall=0.6600`, 45 false alarms). This supports a two-output system: keep the
+count forecast, and add a conservative high-demand alert for staffing and
+triage.
+
 ## Experiment Setup
 
 - Branch: `dev2`
@@ -89,6 +110,13 @@ CatBoost, sklearn models, and naive baselines ran on CPU.
 | `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.final_model_comparison --models xgb --include-calibration` | Passed | `results/final_model_comparison_20260513_035802.json` |
 | `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.final_model_comparison --models default --include-calibration` | Passed | `results/final_model_comparison_20260513_035824.json` |
 | `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.final_model_comparison --models spike_followup` | Passed | `results/final_model_comparison_20260513_044648.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.ablation_data_features_horizon` | Passed | `results/ablation_data_features_horizon_20260513/summary.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 1` | Passed | `results/high_demand_classification_20260513/summary.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode threshold --threshold 2 --threshold-rule f2 --models default --d 1 --output-dir results/high_demand_classification_threshold2_20260513` | Passed | `results/high_demand_classification_threshold2_20260513/summary.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule recall70 --models default --d 1 --output-dir results/high_demand_classification_recall70_20260513` | Passed | `results/high_demand_classification_recall70_20260513/summary.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule far30 --models default --d 1 --output-dir results/high_demand_classification_far30_20260513` | Passed | `results/high_demand_classification_far30_20260513/summary.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 5 --output-dir results/high_demand_classification_d5_20260513` | Passed | `results/high_demand_classification_d5_20260513/summary.json` |
+| `/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 7 --output-dir results/high_demand_classification_d7_20260513` | Passed | `results/high_demand_classification_d7_20260513/summary.json` |
 
 The default run at `2026-05-13T03:11:29` is the final decision run because it
 contains all default candidates.
@@ -391,6 +419,283 @@ Spike follow-up recommendation:
   use `extra_trees_weighted_top25_w2` as the balanced spike-risk option, or
   `extra_trees_weighted_top25_w5` for more aggressive peak capture.
 
+## Data / Soil Moisture / Horizon Ablation Study
+
+Status: completed.
+
+This ablation tested the teammate hypothesis that high-demand underprediction
+could improve by using more historical 311 requests, more historical weather,
+and soil-moisture features. It also tested whether exact next-day count
+prediction is simply too noisy compared with 5-day or 7-day aggregate demand.
+
+Run command:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.ablation_data_features_horizon
+```
+
+Protocol:
+
+- Target scale stayed as raw pothole counts; no `log1p` transform was used.
+- Target definition was `Y_t = sum(P_(t+1), ..., P_(t+d))`.
+- Requested train windows were `2021-01-01` to `2024-09-30` for short-history
+  rows and `2009-01-01` to `2024-09-30` for long-history rows.
+- Validation was fixed at `2024-10-01` to `2024-12-31`.
+- Test was fixed at `2025-01-01` to `2025-12-31`.
+- Rows whose target window crossed the end of their split were dropped. The
+  effective test row end dates were `2025-12-30` for `d=1`, `2025-12-26` for
+  `d=5`, and `2025-12-24` for `d=7`.
+- Test labels were not used for training, calibration, weighting, threshold
+  selection, or model selection. Test actual top-quartile thresholds were used
+  only for diagnostic reporting.
+- All ablation rows used the `ward3_2009_2026` source files so the same
+  historical weather cache with soil moisture was available; short-history
+  variants excluded pre-2021 rows from training through the fixed date split.
+  The long-history effective train start was `2010-01-24` because the weather
+  cache starts at `2009-12-31` and rolling/lagged features need buffer days.
+
+Experiment matrix:
+
+| Experiment ID | Train data | Feature set | d | Purpose |
+|---|---|---|---:|---|
+| `old_2021_weather_d1` | 2021-2024 | weather only | 1 | old short-history baseline |
+| `long_2009_weather_d1` | 2009-2024 | weather only | 1 | isolate more historical data |
+| `short_2021_weather_soil_d1` | 2021-2024 | weather + soil | 1 | isolate soil moisture on short history |
+| `long_2009_weather_soil_d1` | 2009-2024 | weather + soil | 1 | test more data plus soil |
+| `long_2009_weather_soil_d5` | 2009-2024 | weather + soil | 5 | test 5-day aggregate stability |
+| `long_2009_weather_soil_d7` | 2009-2024 | weather + soil | 7 | test 7-day aggregate stability |
+
+Models:
+
+`naive_rolling_mean`, `naive_same_dow_rolling_mean`, `xgb`,
+`lgbm_poisson`, `catboost_poisson`, `extra_trees`, and
+`lgbm_poisson_weighted_top25_w2`.
+
+Metrics table, showing the best model by MAE within each experiment:
+
+| Experiment | Best model by MAE | d | test_mae | test_rmse | test_poisson_deviance | total_count_ratio | underpredicting |
+|---|---|---:|---:|---:|---:|---:|:---:|
+| `old_2021_weather_d1` | `lgbm_poisson_weighted_top25_w2` | 1 | 1.6437 | 2.5018 | 2.4161 | 0.6400 | true |
+| `long_2009_weather_d1` | `naive_rolling_mean` | 1 | 1.6797 | 2.3748 | 1.9386 | 0.9949 | true |
+| `short_2021_weather_soil_d1` | `naive_rolling_mean` | 1 | 1.6797 | 2.3748 | 1.9386 | 0.9949 | true |
+| `long_2009_weather_soil_d1` | `extra_trees` | 1 | 1.6098 | 2.2854 | 1.8687 | 0.8607 | true |
+| `long_2009_weather_soil_d5` | `extra_trees` | 5 | 5.0255 | 6.7492 | 3.4595 | 0.8301 | true |
+| `long_2009_weather_soil_d7` | `naive_rolling_mean` | 7 | 6.6068 | 9.0994 | 3.7883 | 0.9947 | true |
+
+Underprediction diagnostics for the best-MAE row in each experiment:
+
+| Experiment | Model | bias_mean | underprediction_rate | sum_actual | sum_predicted | total_count_ratio | top25_underprediction_rate |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `old_2021_weather_d1` | `lgbm_poisson_weighted_top25_w2` | 0.9357 | 0.6209 | 946.0 | 605.4 | 0.6400 | 0.9604 |
+| `long_2009_weather_d1` | `naive_rolling_mean` | 0.0133 | 0.4093 | 946.0 | 941.1 | 0.9949 | 0.8614 |
+| `short_2021_weather_soil_d1` | `naive_rolling_mean` | 0.0133 | 0.4093 | 946.0 | 941.1 | 0.9949 | 0.8614 |
+| `long_2009_weather_soil_d1` | `extra_trees` | 0.3621 | 0.4945 | 946.0 | 814.2 | 0.8607 | 0.8614 |
+| `long_2009_weather_soil_d5` | `extra_trees` | 2.2150 | 0.6306 | 4693.0 | 3895.6 | 0.8301 | 0.8696 |
+| `long_2009_weather_soil_d7` | `naive_rolling_mean` | 0.0961 | 0.4609 | 6549.0 | 6514.6 | 0.9947 | 0.8172 |
+
+High-demand diagnostics:
+
+| Experiment | Best top25-ratio model | top25_total_count_ratio | Best recall model | high_demand_recall | false_alarm_rate |
+|---|---|---:|---|---:|---:|
+| `old_2021_weather_d1` | `naive_rolling_mean` | 0.6039 | `naive_same_dow_rolling_mean` | 0.3267 | 0.1369 |
+| `long_2009_weather_d1` | `lgbm_poisson_weighted_top25_w2` | 0.9088 | `extra_trees` | 0.6337 | 0.1749 |
+| `short_2021_weather_soil_d1` | `naive_rolling_mean` | 0.6039 | `naive_same_dow_rolling_mean` | 0.3267 | 0.1369 |
+| `long_2009_weather_soil_d1` | `naive_rolling_mean` | 0.6039 | `naive_same_dow_rolling_mean` | 0.3267 | 0.1369 |
+| `long_2009_weather_soil_d5` | `naive_rolling_mean` | 0.7607 | `naive_rolling_mean` | 0.5109 | 0.1157 |
+| `long_2009_weather_soil_d7` | `naive_rolling_mean` | 0.7720 | `naive_rolling_mean` | 0.5054 | 0.1208 |
+
+Explicit comparison summary:
+
+| Question | Comparison | Mean test_mae delta | Mean total_count_ratio delta | Mean top25_total_count_ratio delta | Mean high_demand_recall delta | Best before | Best after |
+|---|---|---:|---:|---:|---:|---|---|
+| More historical request/weather data, weather-only d=1. | `old_2021_weather_d1` -> `long_2009_weather_d1` | 0.2464 | 0.4897 | 0.3457 | 0.3126 | `lgbm_poisson_weighted_top25_w2` (1.6437) | `naive_rolling_mean` (1.6797) |
+| Soil moisture on short history, d=1. | `old_2021_weather_d1` -> `short_2021_weather_soil_d1` | 0.0649 | -0.0463 | -0.0240 | -0.0099 | `lgbm_poisson_weighted_top25_w2` (1.6437) | `naive_rolling_mean` (1.6797) |
+| Soil moisture on long history, d=1. | `long_2009_weather_d1` -> `long_2009_weather_soil_d1` | -0.2427 | -0.3843 | -0.2550 | -0.2093 | `naive_rolling_mean` (1.6797) | `extra_trees` (1.6098) |
+| Long-history weather+soil horizon d=1 vs d=5. | `long_2009_weather_soil_d1` -> `long_2009_weather_soil_d5` | 4.2015 | -0.0103 | 0.1410 | 0.0952 | `extra_trees` (1.6098) | `extra_trees` (5.0255) |
+| Long-history weather+soil horizon d=1 vs d=7. | `long_2009_weather_soil_d1` -> `long_2009_weather_soil_d7` | 6.4625 | -0.0150 | 0.1568 | 0.0899 | `extra_trees` (1.6098) | `naive_rolling_mean` (6.6068) |
+
+Ablation conclusions:
+
+- More data alone did not improve MAE. On weather-only `d=1`, the mean model
+  MAE increased by `0.2464`, but total-count ratio and high-demand recall
+  improved substantially. This suggests the long-history weather-only models
+  became less conservative, but not more accurate.
+- Soil moisture alone did not help the short-history setup. Mean MAE increased
+  by `0.0649`, total-count ratio fell, and high-demand recall was essentially
+  unchanged.
+- More data plus soil helped the long-history `d=1` setup. The best row became
+  `long_2009_weather_soil_d1` + `extra_trees` with `test_mae=1.6098`, the best
+  MAE in this ablation. It still underpredicted high-demand days.
+- Moving from `d=1` to `d=5`/`d=7` changed the task to a larger aggregate
+  target, so raw MAE is not directly comparable to `d=1`. The aggregate
+  horizons improved top-quartile total-count ratio and high-demand recall, but
+  underprediction remained present in the best rows.
+- Best setup for MAE: `long_2009_weather_soil_d1` with `extra_trees`.
+- Best setup for underprediction by total-count ratio among best-MAE rows:
+  `long_2009_weather_d1` and `short_2021_weather_soil_d1` with
+  `naive_rolling_mean`, both near total-count parity but still top-quartile
+  underpredicting.
+- Best setup for high-demand recall: `long_2009_weather_d1` with `extra_trees`
+  (`high_demand_recall=0.6337`, `false_alarm_rate=0.1749`), but its MAE was
+  worse than the best `d=1` soil setup.
+
+Ablation artifacts:
+
+- Summary JSON: `results/ablation_data_features_horizon_20260513/summary.json`
+- Summary CSV: `results/ablation_data_features_horizon_20260513/summary.csv`
+- Summary Markdown: `results/ablation_data_features_horizon_20260513/summary.md`
+- Test MAE plot: `results/ablation_data_features_horizon_20260513/test_mae_by_experiment_model.png`
+- Total-count-ratio plot: `results/ablation_data_features_horizon_20260513/total_count_ratio_by_experiment_model.png`
+- Top25-total-count-ratio plot: `results/ablation_data_features_horizon_20260513/top25_total_count_ratio_by_experiment_model.png`
+- Recall vs false-alarm plot: `results/ablation_data_features_horizon_20260513/high_demand_recall_vs_false_alarm.png`
+- Key time-series plot: `results/ablation_data_features_horizon_20260513/actual_vs_predicted_key_experiments.png`
+- Best overall predictions: `results/ablation_data_features_horizon_20260513/long_2009_weather_soil_d1/extra_trees/test_predictions.csv`
+
+## High-Demand Day Classification / Alerting
+
+Status: completed.
+
+This standalone Part B reframed the task as binary alerting: predict whether
+future raw pothole demand crosses a high-demand threshold. The motivation was
+that low-MAE count models are smooth and can miss operational spike days, while
+staffing and inspection decisions may only need a useful alert.
+
+Primary run:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.high_demand_classification --label-mode q75 --threshold-rule f2 --models default --d 1
+```
+
+Protocol:
+
+- Target scale stayed as raw pothole counts; no `log1p` transform was used.
+- Target definition was `Y_t = sum(P_(t+1), ..., P_(t+d))`.
+- Primary target used `d=1`, so `Y_t = P_(t+1)`.
+- Requested train window was `2009-01-01` to `2024-09-30`.
+- Validation was fixed at `2024-10-01` to `2024-12-31`.
+- Test was fixed at `2025-01-01` to `2025-12-31`.
+- Effective rows for `d=1` were train `2010-01-24` to `2024-09-29`,
+  validation `2024-10-01` to `2024-12-30`, and test `2025-01-01` to
+  `2025-12-30`.
+- Features used the same weather+soil feature generation as the count models,
+  including `sm07_roll` and `sm728_roll`.
+- The primary high-demand label used `--label-mode q75`: the threshold was
+  computed from train labels only, then held fixed for validation and test.
+- The resulting primary threshold was `Y >= 3`.
+- Label prevalence was train `0.3334`, validation `0.1209`, and test `0.4121`
+  under the train-derived threshold.
+- Test labels were used only for final evaluation. They were not used for label
+  threshold definition, alert threshold selection, model selection, weighting,
+  or calibration.
+
+Classifier and alert list:
+
+- Naive alert baselines: `naive_previous_high_demand`,
+  `naive_rolling_mean_alert`, and `naive_same_dow_rolling_mean_alert`.
+- Count-threshold baselines: `count_lgbm_threshold_alert` and
+  `count_extra_trees_threshold_alert`, using the Part A count prediction CSVs
+  and the same high-demand count threshold.
+- ML classifiers: `logistic_l1_classifier`, `random_forest_classifier`,
+  `extra_trees_classifier`, `xgb_classifier`, `lgbm_classifier`, and
+  `catboost_classifier`.
+- ML alert thresholds were selected on validation predictions only. The primary
+  rule maximized validation F2.
+
+Primary validation metrics:
+
+| Model | Type | val_precision | val_recall | val_f2 | val_false_alarm_rate | selected_threshold |
+|---|---|---:|---:|---:|---:|---:|
+| `lgbm_classifier` | ML | 0.1358 | 1.0000 | 0.4400 | 0.8750 | 0.0731 |
+| `logistic_l1_classifier` | ML | 0.1408 | 0.9091 | 0.4348 | 0.7625 | 0.1450 |
+| `extra_trees_classifier` | ML | 0.1264 | 1.0000 | 0.4198 | 0.9500 | 0.1941 |
+| `catboost_classifier` | ML | 0.1264 | 1.0000 | 0.4198 | 0.9500 | 0.0800 |
+| `xgb_classifier` | ML | 0.1250 | 1.0000 | 0.4167 | 0.9625 | 0.0800 |
+| `random_forest_classifier` | ML | 0.1236 | 1.0000 | 0.4135 | 0.9750 | 0.1500 |
+| `naive_previous_high_demand` | naive | 0.0909 | 0.0909 | 0.0909 | 0.1250 | 0.5000 |
+| `naive_rolling_mean_alert` | naive | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 3.0000 |
+| `naive_same_dow_rolling_mean_alert` | naive | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 3.0000 |
+| `count_extra_trees_threshold_alert` | count threshold | 0.0000 | 0.0000 | 0.0000 | 0.0125 | 3.0000 |
+| `count_lgbm_threshold_alert` | count threshold | 0.0000 | 0.0000 | 0.0000 | 0.0125 | 3.0000 |
+
+Primary test metrics:
+
+| Model | Type | precision | recall | f2 | false_alarm_rate | alerts/month | missed high-demand days | false alarms |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `random_forest_classifier` | ML | 0.4306 | 0.9933 | 0.7875 | 0.9206 | 28.93 | 1 | 197 |
+| `extra_trees_classifier` | ML | 0.4375 | 0.9800 | 0.7853 | 0.8832 | 28.10 | 3 | 189 |
+| `lgbm_classifier` | ML | 0.5018 | 0.9067 | 0.7807 | 0.6308 | 22.66 | 14 | 135 |
+| `xgb_classifier` | ML | 0.4662 | 0.9200 | 0.7701 | 0.7383 | 24.75 | 12 | 158 |
+| `catboost_classifier` | ML | 0.4564 | 0.8733 | 0.7384 | 0.7290 | 24.00 | 19 | 156 |
+| `naive_same_dow_rolling_mean_alert` | naive | 0.6875 | 0.6600 | 0.6653 | 0.2103 | 12.04 | 51 | 45 |
+| `logistic_l1_classifier` | ML | 0.5667 | 0.6800 | 0.6538 | 0.3645 | 15.05 | 48 | 78 |
+| `naive_rolling_mean_alert` | naive | 0.6870 | 0.6000 | 0.6156 | 0.1916 | 10.95 | 60 | 41 |
+| `naive_previous_high_demand` | naive | 0.6000 | 0.6000 | 0.6000 | 0.2804 | 12.54 | 60 | 60 |
+| `count_extra_trees_threshold_alert` | count threshold | 0.7423 | 0.4800 | 0.5165 | 0.1168 | 8.11 | 78 | 25 |
+| `count_lgbm_threshold_alert` | count threshold | 0.8182 | 0.2400 | 0.2795 | 0.0374 | 3.68 | 114 | 8 |
+
+Sensitivity runs:
+
+| Run | Label rule | d | threshold | val prevalence | test prevalence | Best test-F2 model | test_f2 | recall | false_alarm_rate | missed days | Best with FAR <= 0.30 |
+|---|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---|
+| Primary | train `q75` + F2 threshold | 1 | 3 | 0.1209 | 0.4121 | `random_forest_classifier` | 0.7875 | 0.9933 | 0.9206 | 1 | `naive_same_dow_rolling_mean_alert` |
+| Business threshold | fixed `Y >= 2` + F2 threshold | 1 | 2 | 0.2747 | 0.5659 | `logistic_l1_classifier` | 0.8803 | 0.9854 | 0.7975 | 3 | `count_extra_trees_threshold_alert` |
+| Recall-prioritized | train `q75` + recall70 | 1 | 3 | 0.1209 | 0.4121 | `random_forest_classifier` | 0.7875 | 0.9933 | 0.9206 | 1 | `naive_same_dow_rolling_mean_alert` |
+| False-alarm constrained | train `q75` + FAR30 | 1 | 3 | 0.1209 | 0.4121 | `naive_same_dow_rolling_mean_alert` | 0.6653 | 0.6600 | 0.2103 | 51 | `naive_same_dow_rolling_mean_alert` |
+| Aggregate sensitivity | train `q75` + F2 threshold | 5 | 17 | 0.0000 | 0.3028 | `naive_previous_high_demand` | 0.5780 | 0.5780 | 0.1833 | 46 | `naive_previous_high_demand` |
+| Aggregate sensitivity | train `q75` + F2 threshold | 7 | 25 | 0.0000 | 0.2598 | `count_extra_trees_threshold_alert` | 0.5196 | 0.4839 | 0.0604 | 48 | `count_extra_trees_threshold_alert` |
+
+The `d=5` and `d=7` alerting runs are sensitivity checks rather than the main
+decision runs. Their train-derived aggregate thresholds produced zero
+validation positives in the fixed October-December 2024 validation period, so
+validation F2 threshold selection is not well identified for those horizons.
+
+Answers to the alerting questions:
+
+1. Does high-demand classification improve spike detection compared with count
+   forecasts? Yes for recall, but only by accepting many more alerts. The best
+   classifier reached `recall=0.9933`, while the count-threshold baselines had
+   recall `0.4800` for ExtraTrees and `0.2400` for LightGBM.
+2. Which model has the best validation-selected test F2 score?
+   `random_forest_classifier` on the primary q75/F2 run (`test_f2=0.7875`).
+3. Which model has the best recall at acceptable false-alarm rate?
+   With `false_alarm_rate <= 0.30`, `naive_same_dow_rolling_mean_alert` was the
+   best primary alert (`recall=0.6600`, `test_f2=0.6653`,
+   `false_alarm_rate=0.2103`).
+4. How many high-demand days are missed? The primary test split had 150
+   high-demand days. `random_forest_classifier` missed 1; the practical
+   FAR-constrained same-DOW baseline missed 51.
+5. How many false alarms per month are generated? `random_forest_classifier`
+   generated 197 false alarms, about 16.47 false alarms per month. The
+   same-DOW baseline generated 45 false alarms, about 3.76 false alarms per
+   month.
+6. Are naive alert baselines competitive? Yes. The same-DOW rolling alert is
+   the best practical low-false-alarm alert and beats the thresholded count
+   forecasts on F2 and recall.
+7. Should the final framing become count forecasting, aggregate forecasting,
+   alerting, or a two-output system? The evidence favors a two-output system:
+   keep count forecasting for expected workload magnitude and add a conservative
+   high-demand alert for staffing and triage. Exact count forecasting alone
+   misses too many spikes; unconstrained classification catches spikes but is
+   too noisy; aggregate horizons need more careful validation because the fixed
+   2024 validation period had no q75 positives for `d=5`/`d=7`.
+
+Alerting artifacts:
+
+- Primary summary JSON: `results/high_demand_classification_20260513/summary.json`
+- Primary summary CSV: `results/high_demand_classification_20260513/summary.csv`
+- Primary summary Markdown: `results/high_demand_classification_20260513/summary.md`
+- Threshold-2 summary: `results/high_demand_classification_threshold2_20260513/summary.json`
+- Recall70 summary: `results/high_demand_classification_recall70_20260513/summary.json`
+- FAR30 summary: `results/high_demand_classification_far30_20260513/summary.json`
+- d=5 summary: `results/high_demand_classification_d5_20260513/summary.json`
+- d=7 summary: `results/high_demand_classification_d7_20260513/summary.json`
+- F2/recall/precision plot: `results/high_demand_classification_20260513/model_comparison_f2_recall_precision.png`
+- False-alarm plot: `results/high_demand_classification_20260513/model_comparison_false_alarm_rate.png`
+- Precision-recall curve: `results/high_demand_classification_20260513/precision_recall_curve.png`
+- ROC curve: `results/high_demand_classification_20260513/roc_curve.png`
+- Selected-model predictions: `results/high_demand_classification_20260513/random_forest_classifier/test_predictions.csv`
+- Practical-alert predictions: `results/high_demand_classification_20260513/naive_same_dow_rolling_mean_alert/test_predictions.csv`
+
 ## Best Model Selection
 
 The final selected model under the declared rule is `lgbm_poisson` because it
@@ -427,11 +732,18 @@ Recommendation after calibration follow-up:
   `test_poisson_deviance`, lower `top25_mae` than `extra_trees`, and
   `underpredicting=false`, but its `total_count_ratio=1.1084` narrowly exceeds
   the upper calibration band.
+- Alerting recommendation: use a two-output system if operations care about
+  staffing or triage on spike days. Keep the count forecast as the magnitude
+  estimate, and add `naive_same_dow_rolling_mean_alert` as the conservative
+  low-false-alarm high-demand alert. The unconstrained classifiers are useful
+  as high-recall research baselines, but they fire too often for a practical
+  primary alert.
 
 ## Failures and Skipped Models
 
 No models failed or were skipped in the final default run, the calibration
-follow-up run, or the completed high-demand spike follow-up run.
+follow-up run, the completed high-demand spike follow-up run, or the
+data/soil/horizon ablation study, or the high-demand day alerting runs.
 
 `xgb_sarimax` was not included in the default run by design. It remains
 available through `--models all` or `--models xgb_sarimax` as an optional
@@ -500,6 +812,34 @@ High-demand spike follow-up artifacts:
 - High-demand visual PNG: `results/final_model_spike_followup_high_demand.png`
 - High-demand visual PDF: `results/final_model_spike_followup_high_demand.pdf`
 
+Data/soil/horizon ablation artifacts:
+
+- Summary JSON: `results/ablation_data_features_horizon_20260513/summary.json`
+- Summary CSV: `results/ablation_data_features_horizon_20260513/summary.csv`
+- Summary Markdown: `results/ablation_data_features_horizon_20260513/summary.md`
+- Test MAE plot: `results/ablation_data_features_horizon_20260513/test_mae_by_experiment_model.png`
+- Total-count-ratio plot: `results/ablation_data_features_horizon_20260513/total_count_ratio_by_experiment_model.png`
+- Top25-total-count-ratio plot: `results/ablation_data_features_horizon_20260513/top25_total_count_ratio_by_experiment_model.png`
+- Recall vs false-alarm plot: `results/ablation_data_features_horizon_20260513/high_demand_recall_vs_false_alarm.png`
+- Key actual-vs-predicted plot: `results/ablation_data_features_horizon_20260513/actual_vs_predicted_key_experiments.png`
+
+High-demand day alerting artifacts:
+
+- Primary summary JSON: `results/high_demand_classification_20260513/summary.json`
+- Primary summary CSV: `results/high_demand_classification_20260513/summary.csv`
+- Primary summary Markdown: `results/high_demand_classification_20260513/summary.md`
+- Threshold-2 summary JSON: `results/high_demand_classification_threshold2_20260513/summary.json`
+- Recall70 summary JSON: `results/high_demand_classification_recall70_20260513/summary.json`
+- FAR30 summary JSON: `results/high_demand_classification_far30_20260513/summary.json`
+- d=5 summary JSON: `results/high_demand_classification_d5_20260513/summary.json`
+- d=7 summary JSON: `results/high_demand_classification_d7_20260513/summary.json`
+- F2/recall/precision plot: `results/high_demand_classification_20260513/model_comparison_f2_recall_precision.png`
+- False-alarm plot: `results/high_demand_classification_20260513/model_comparison_false_alarm_rate.png`
+- Precision-recall curve: `results/high_demand_classification_20260513/precision_recall_curve.png`
+- ROC curve: `results/high_demand_classification_20260513/roc_curve.png`
+- Selected high-recall predictions: `results/high_demand_classification_20260513/random_forest_classifier/test_predictions.csv`
+- Practical low-false-alarm predictions: `results/high_demand_classification_20260513/naive_same_dow_rolling_mean_alert/test_predictions.csv`
+
 Visual comparison artifacts:
 
 - Stacked time-series PNG: `results/final_model_visual_comparison.png`
@@ -529,6 +869,23 @@ is not a complete fix. The weighted ExtraTrees variants capture peaks better,
 but the improved recall comes with high false-alarm rates and large total-count
 overprediction.
 
+The data/soil/horizon ablation gives a more nuanced answer to the teammate
+hypothesis. More history alone improved recall and count-ratio diagnostics but
+worsened average MAE. Soil moisture was not useful in the short-history setup,
+but long-history weather+soil with `extra_trees` produced the best `d=1` MAE in
+that ablation. The `d=5` and `d=7` aggregate targets improved high-demand
+recall and top-quartile count capture, but the best rows still underpredicted,
+so horizon aggregation is not a complete solution by itself.
+
+The high-demand classification experiment makes the tradeoff explicit.
+Thresholded count forecasts are precise but miss too many high-demand days.
+Unconstrained classifiers catch almost every spike, but they create too many
+false alarms. The best operational compromise in this run is the
+same-day-of-week rolling alert: it is simple, has `recall=0.6600`, keeps
+`false_alarm_rate=0.2103`, and outperforms thresholded count forecasts on F2.
+That makes alerting a useful companion output, not a replacement for count
+forecasting.
+
 The stacked visual comparison shows the same pattern: the naive baselines and
 tree/boosted models are smoother than the actual daily series, and the main
 accuracy models visibly miss peak days. `extra_trees` tracks the total level
@@ -551,6 +908,15 @@ earning their complexity.
 - For peak-demand operations, test `lgbm_poisson_weighted_top25_w2` and
   `extra_trees_weighted_top25_w2` in downstream staffing or alert simulations
   before replacing the accuracy-first model.
+- Use the ablation results to decide whether the operational objective should
+  remain exact daily count forecasting or move toward aggregate-demand or
+  alerting targets.
+- If alerting becomes part of the deliverable, validate the
+  `naive_same_dow_rolling_mean_alert` rule with stakeholders because it trades
+  51 missed high-demand days for only 45 false alarms on the 2025 test period.
+- Revisit aggregate-horizon alerting with a validation window that contains
+  enough high-demand positives for `d=5` and `d=7`; the fixed 2024 validation
+  period had zero q75 positives for those aggregate labels.
 - Run the optional `xgb_sarimax` ablation through `--models all` if runtime is
   acceptable and the residual time-series layer remains relevant.
 - Add a small regression test around recursive lag updates and naive
