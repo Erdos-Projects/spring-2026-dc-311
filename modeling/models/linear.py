@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import Lasso, Ridge
+from sklearn.linear_model import Lasso, LassoCV, Ridge, RidgeCV
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -20,6 +21,10 @@ class RegularizedLinearModel:
         fit_intercept: bool = True,
         standardize: bool = True,
         max_iter: int = 10000,
+        tune_alpha: bool = False,
+        alpha_grid: list[float] | None = None,
+        cv_splits: int = 5,
+        scoring: str = "neg_mean_squared_error",
         **kwargs,
     ):
         if penalty not in {"l1", "l2"}:
@@ -31,22 +36,48 @@ class RegularizedLinearModel:
         self.fit_intercept = fit_intercept
         self.standardize = standardize
         self.max_iter = max_iter
+        self.tune_alpha = tune_alpha
+        self.alpha_grid = alpha_grid
+        self.cv_splits = cv_splits
+        self.scoring = scoring
+        self.alpha_ = None
         self._model = None
         self._feature_names: list[str] = []
 
+    def _alpha_grid(self) -> np.ndarray:
+        if self.alpha_grid is None:
+            return np.logspace(-4, 4, 25)
+        return np.asarray(self.alpha_grid, dtype=float)
+
     def _build_estimator(self):
-        if self.penalty == "l1":
+        if not self.tune_alpha and self.penalty == "l1":
             estimator = Lasso(
                 alpha=self.alpha,
                 fit_intercept=self.fit_intercept,
                 max_iter=self.max_iter,
             )
-        else:
+        elif not self.tune_alpha:
             estimator = Ridge(
                 alpha=self.alpha,
                 fit_intercept=self.fit_intercept,
                 max_iter=self.max_iter,
             )
+        else:
+            cv = TimeSeriesSplit(n_splits=self.cv_splits)
+            if self.penalty == "l1":
+                estimator = LassoCV(
+                    alphas=self._alpha_grid(),
+                    fit_intercept=self.fit_intercept,
+                    max_iter=self.max_iter,
+                    cv=cv,
+                )
+            else:
+                estimator = RidgeCV(
+                    alphas=self._alpha_grid(),
+                    fit_intercept=self.fit_intercept,
+                    cv=cv,
+                    scoring=self.scoring,
+                )
 
         if not self.standardize:
             return estimator
@@ -60,6 +91,12 @@ class RegularizedLinearModel:
         self._feature_names = list(X.columns)
         self._model = self._build_estimator()
         self._model.fit(X.astype(float), pd.Series(y).astype(float).values)
+        estimator = (
+            self._model.named_steps["model"]
+            if isinstance(self._model, Pipeline)
+            else self._model
+        )
+        self.alpha_ = float(getattr(estimator, "alpha_", self.alpha))
         return self
 
     def predict(
@@ -83,7 +120,7 @@ class RegularizedLinearModel:
 
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         X_work = X.copy().astype(float)
-        print(f"Using recursive prediction with k_AR = {k_AR}")
+        # print(f"Using recursive prediction with k_AR = {k_AR}")
         preds = []
         for i in range(len(X)):
             if i > 0:
@@ -102,3 +139,7 @@ class RegularizedLinearModel:
         if isinstance(self._model, Pipeline):
             return self._model.named_steps["model"].coef_
         return self._model.coef_
+
+    @property
+    def selected_alpha_(self) -> float | None:
+        return self.alpha_

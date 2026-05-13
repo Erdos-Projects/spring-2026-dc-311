@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-
+from tqdm import tqdm
 
 def validate_horizon_h(horizon_h: int | None) -> int | None:
     """Return a positive integer horizon or None when block inference is disabled."""
@@ -24,7 +24,7 @@ def predict_in_blocks(model, X: pd.DataFrame, horizon_h: int) -> np.ndarray:
         raise ValueError("horizon_h is required for blocked prediction.")
 
     preds: list[np.ndarray] = []
-    for start in range(0, len(X), h):
+    for start in tqdm(range(0, len(X), h), desc="Predicting in blocks"):
         X_block = X.iloc[start : start + h]
         block_preds = model.predict(X_block, recursive=True, horizon_h=None)
         preds.append(np.asarray(block_preds))

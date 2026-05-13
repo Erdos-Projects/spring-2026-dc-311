@@ -3,5 +3,12 @@ name: sarima
 order: [1, 0, 0]
 seasonal_order: [0, 0, 0, 0]
 trend: null
+auto_order: false
+seasonal: true
+m: 7
+stepwise: true
+suppress_warnings: true
+error_action: ignore
+trace: false
 enforce_stationarity: true
 enforce_invertibility: true
