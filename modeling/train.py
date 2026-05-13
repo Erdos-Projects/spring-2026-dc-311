@@ -32,6 +32,20 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
 from modeling.split import make_split
 
+TARGET_SCALE = "raw_counts"
+
+
+def _model_device(cfg_model, model=None) -> str:
+    """Return the configured training device, defaulting sklearn/statsmodels models to CPU."""
+    if hasattr(cfg_model, "get"):
+        device = cfg_model.get("device", None)
+    else:
+        device = getattr(cfg_model, "device", None)
+    if device is None and model is not None:
+        device = getattr(model, "device", None)
+    return str(device or "cpu")
+
+
 def cross_val(
     cfg_model,
     X: pd.DataFrame,
@@ -58,6 +72,7 @@ def cross_val(
             assimilate=True,
             Ys=y_v,
         )
+        preds = np.clip(np.asarray(preds, dtype=float), 0, None)
         fold_mae.append(mae(y_v.values, preds))
         fold_rmse.append(rmse(y_v.values, preds))
         fold_pd.append(poisson_deviance(y_v.values, preds))
@@ -98,11 +113,13 @@ def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg,
                             else (vars(feat_params) if isinstance(feat_params, SimpleNamespace) else dict(feat_params)),
             "run_id":       run_id,
             "wx_range":     wx_range,
+            "target_scale": TARGET_SCALE,
         }, f)
 
     with open(run_cfg_path, "w") as f:
         run_data = OmegaConf.to_container(cfg, resolve=True)
         split_method = str(getattr(getattr(cfg, "split", None), "method", "temporal"))
+        device = _model_device(cfg.model, model)
 
         run_data["leakage"] = {
             "split_method": split_method,
@@ -113,6 +130,17 @@ def save_model(model, feat_params, feature_cols, stem, run_id, wx_range, cfg,
         run_data["run_id"]     = run_id
         run_data["wx_range"]   = wx_range
         run_data["model_name"] = model.name
+        run_data["target_scale"] = TARGET_SCALE
+        run_data["device"] = device
+        if getattr(model, "sample_weight_mode", None):
+            run_data["sample_weighting"] = {
+                "mode": getattr(model, "sample_weight_mode", None),
+                "high_weight": getattr(model, "high_weight", None),
+                "high_quantile": getattr(model, "high_quantile", None),
+                "threshold_source": "fit_split_only",
+                "final_fit_threshold": getattr(model, "sample_weight_threshold_", None),
+                "test_labels_used_for_weights": False,
+            }
         if wandb_run_id is not None:
             run_data["wandb_run_id"] = wandb_run_id
         yaml.dump(run_data, f, default_flow_style=False)
@@ -135,13 +163,6 @@ def save_results(metrics: dict, stem: str) -> Path:
         json.dump(serialisable, f, indent=2)
     return metrics_path
 
-def log1x(x: np.ndarray) -> np.ndarray:
-    """the log 1 + x function"""
-    return np.log1p(x)
-
-def inv_log1x(x: np.ndarray) -> np.ndarray:
-    """the inverse of log1p, i.e. exp(x) - 1"""
-    return np.expm1(x)
 def train(cfg: DictConfig) -> dict:
     """
     Full training pipeline:
@@ -165,19 +186,15 @@ def train(cfg: DictConfig) -> dict:
             config=OmegaConf.to_container(cfg, resolve=True),
             tags=[cfg.ward.name, cfg.model.name],
         )
-    breakpoint()
     pothole_df, weather_df = build_daily(cfg) # build the daily series 
     feat_df = assemble_features(pothole_df, weather_df, cfg.features) 
     feat_df = make_split(feat_df, cfg.split, cfg.features) # split the data into train, val, and test sets
     feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
-    breakpoint()
     train_df = feat_df[feat_df["split"] == "train"] # get the train set
     val_df = feat_df[feat_df["split"] == "val"] # get the val set
     train_val_df = feat_df[feat_df["split"].isin(["train", "val"])] # get the train and val set
-    breakpoint()
     X_train = train_df[feature_cols] # get the features for the train set
     y_train = train_df["Y"] 
-    breakpoint()
     if cfg.debug.verbose:
         print(f"Feature matrix shape : {feat_df.shape}")
         print(f"Train / val / test   : {len(train_df)} / {len(val_df)} / "
@@ -187,12 +204,11 @@ def train(cfg: DictConfig) -> dict:
     # ── K-fold CV ─────────────────────────────────────────────────────────────
     horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
     cv_metrics = cross_val(
-        cfg.model, X_train, log1x(y_train),
+        cfg.model, X_train, y_train,
         k=5,
         horizon_h=horizon_h,
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
-    breakpoint()
     # ── Log CV metrics to wandb ───────────────────────────────────────────────
     if cfg.wandb.enabled:
         fold_maes  = cv_metrics.pop("_fold_mae")
@@ -221,25 +237,24 @@ def train(cfg: DictConfig) -> dict:
         if cfg.wandb.enabled:
             wandb.finish()
         return cv_metrics
-    breakpoint()
     # ── Final fit on train + val ──────────────────────────────────────────────
     X_tv = train_val_df[feature_cols]
     y_tv = train_val_df["Y"] # get the target for the train and val set
     model = build_model(cfg.model) # build the model
-    model.fit(X_tv, log1x(y_tv)) # fit the model on the train and val set
-    breakpoint()
+    model.fit(X_tv, y_tv) # fit the model on the train and val set
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(
         val_df[feature_cols],
         recursive=True,
         horizon_h=horizon_h,
         assimilate=True,
-        Ys=log1x(val_df["Y"]),
+        Ys=val_df["Y"],
     )
+    val_preds = np.clip(np.asarray(val_preds, dtype=float), 0, None)
     val_metrics = {
-        "val_mae":              float(mae(log1x(val_df["Y"].values), val_preds)), # calculate the MAE for the val set
-        "val_rmse":             float(rmse(log1x(val_df["Y"].values), val_preds)), # calculate the RMSE for the val set
-        "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, inv_log1x(val_preds))), # calculate the Poisson deviance for the val set
+        "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set
+        "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set
+        "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, val_preds)), # calculate the Poisson deviance
     }
 
     if cfg.wandb.enabled:
@@ -254,17 +269,38 @@ def train(cfg: DictConfig) -> dict:
     wx_end   = pd.to_datetime(weather_df["date"].max()).strftime("%Y%m%d")
     wx_range = f"{wx_start}_{wx_end}"
 
-    metrics = {**cv_metrics, **val_metrics, "run_id": run_id, "wx_range": wx_range}
+    stem = f"{cfg.ward.name}_{cfg.model.name}_{wx_range}_{run_id}"
+    device = _model_device(cfg.model, model)
+    metrics = {
+        **cv_metrics,
+        **val_metrics,
+        "model_name": model.name,
+        "run_id": run_id,
+        "wx_range": wx_range,
+        "stem": stem,
+        "target_scale": TARGET_SCALE,
+        "device": device,
+    }
+    if getattr(model, "sample_weight_mode", None):
+        metrics.update({
+            "sample_weight_mode": getattr(model, "sample_weight_mode", None),
+            "high_weight": getattr(model, "high_weight", None),
+            "high_quantile": getattr(model, "high_quantile", None),
+            "sample_weight_threshold": getattr(model, "sample_weight_threshold_", None),
+            "test_labels_used_for_weights": False,
+        })
 
     if cfg.wandb.enabled and wandb_run is not None:
         metrics["wandb_run_id"] = wandb_run.id
 
-    stem = f"{cfg.ward.name}_{cfg.model.name}_{wx_range}_{run_id}"
     model_path, run_cfg_path = save_model(
         model, cfg.features, feature_cols, stem, run_id, wx_range, cfg,
         wandb_run_id=metrics.get("wandb_run_id"),
     )
+    metrics["model_path"] = str(model_path)
+    metrics["run_cfg_path"] = str(run_cfg_path)
     metrics_path = save_results(metrics, stem)
+    metrics["metrics_path"] = str(metrics_path)
 
     print(f"run_id      → {run_id}")
     print(f"wx_range    → {wx_range}")

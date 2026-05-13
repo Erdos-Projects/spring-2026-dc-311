@@ -2,7 +2,11 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMRegressor
 
-from modeling.models.utils import predict_in_blocks
+from modeling.models.utils import (
+    ar_lag_columns,
+    recursive_predict_with_lags,
+    resolve_sample_weight,
+)
 
 class LGBMModel:
     """LightGBM regressor with Poisson objective (sklearn-style interface)."""
@@ -10,8 +14,19 @@ class LGBMModel:
     name = "lgbm"
 
     def __init__(self, n_estimators: int = 300, learning_rate: float = 0.05,
-                 num_leaves: int = 31, objective: str = "poisson", **kwargs):
+                 num_leaves: int = 31, objective: str = "poisson",
+                 name: str | None = None,
+                 sample_weight_mode: str | None = None,
+                 high_weight: float = 3.0,
+                 high_quantile: float = 0.75,
+                 **kwargs):
 
+        if name:
+            self.name = str(name)
+        self.sample_weight_mode = sample_weight_mode
+        self.high_weight = float(high_weight)
+        self.high_quantile = float(high_quantile)
+        self.sample_weight_threshold_ = None
         self._model = LGBMRegressor(
             n_estimators=n_estimators,
             learning_rate=learning_rate,
@@ -20,8 +35,19 @@ class LGBMModel:
             verbose=-1,
         )
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "LGBMModel":
-        self._model.fit(X, y)
+    def fit(self, X: pd.DataFrame, y: pd.Series, sample_weight=None) -> "LGBMModel":
+        weights, threshold = resolve_sample_weight(
+            y,
+            sample_weight,
+            sample_weight_mode=self.sample_weight_mode,
+            high_quantile=self.high_quantile,
+            high_weight=self.high_weight,
+        )
+        self.sample_weight_threshold_ = threshold
+        if weights is None:
+            self._model.fit(X, y)
+        else:
+            self._model.fit(X, y, sample_weight=weights)
         return self
 
     def predict(
@@ -32,25 +58,11 @@ class LGBMModel:
         horizon_h: int | None = None,
         **kwargs,
     ) -> np.ndarray:
-        ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        ar_cols = ar_lag_columns(X)
         if not recursive or len(ar_cols) == 0:
             return np.clip(self._model.predict(X), 0, None)
 
-        if horizon_h is not None:
-            return predict_in_blocks(self, X, horizon_h)
-
-        k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
-        X_work = X.copy()
-        preds = []
-        for i in range(len(X)):
-            if i > 0:
-                for k in range(1, min(i, k_AR) + 1):
-                    col = f"pothole_lag{k}"
-                    if col in X_work.columns:
-                        X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
-            pred_i = self._model.predict(X_work.iloc[[i]])[0]
-            preds.append(max(0.0, pred_i))
-        return np.array(preds)
+        return recursive_predict_with_lags(self._model.predict, X, horizon_h)
 
     @property
     def feature_importances_(self) -> np.ndarray:
@@ -67,12 +79,24 @@ class XGBModel:
     name = "xgb"
 
     def __init__(self, n_estimators: int = 300, learning_rate: float = 0.05,
-                 max_depth: int = 6, objective: str = "count:poisson", device: str = "cpu", **kwargs):
+                 max_depth: int = 6, objective: str = "count:poisson", device: str = "cpu",
+                 name: str | None = None,
+                 sample_weight_mode: str | None = None,
+                 high_weight: float = 3.0,
+                 high_quantile: float = 0.75,
+                 **kwargs):
         try:
             from xgboost import XGBRegressor
         except ImportError as e:
             raise ImportError("xgboost is required: pip install xgboost") from e
 
+        if name:
+            self.name = str(name)
+        self.device = device
+        self.sample_weight_mode = sample_weight_mode
+        self.high_weight = float(high_weight)
+        self.high_quantile = float(high_quantile)
+        self.sample_weight_threshold_ = None
         self._model = XGBRegressor(
             n_estimators=n_estimators,
             learning_rate=learning_rate,
@@ -82,8 +106,19 @@ class XGBModel:
             device=device,
         )
 
-    def fit(self, X: pd.DataFrame, y: pd.Series) -> "XGBModel":
-        self._model.fit(X, y)
+    def fit(self, X: pd.DataFrame, y: pd.Series, sample_weight=None) -> "XGBModel":
+        weights, threshold = resolve_sample_weight(
+            y,
+            sample_weight,
+            sample_weight_mode=self.sample_weight_mode,
+            high_quantile=self.high_quantile,
+            high_weight=self.high_weight,
+        )
+        self.sample_weight_threshold_ = threshold
+        if weights is None:
+            self._model.fit(X, y)
+        else:
+            self._model.fit(X, y, sample_weight=weights)
         return self
 
     def predict(
@@ -94,26 +129,11 @@ class XGBModel:
         horizon_h: int | None = None,
         **kwargs,
     ) -> np.ndarray:
-        ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
+        ar_cols = ar_lag_columns(X)
         if not recursive or len(ar_cols) == 0:
             return np.clip(self._model.predict(X), 0, None)
 
-        if horizon_h is not None:
-            return predict_in_blocks(self, X, horizon_h)
-
-        k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
-        X_work = X.copy()
-        preds = []
-        # print(f"Using recursive prediction with k_AR = {k_AR}")
-        for i in range(len(X)):
-            if i > 0:
-                for k in range(1, min(i, k_AR) + 1):
-                    col = f"pothole_lag{k}"
-                    if col in X_work.columns:
-                        X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
-            pred_i = self._model.predict(X_work.iloc[[i]])[0]
-            preds.append(max(0.0, pred_i))
-        return np.array(preds)
+        return recursive_predict_with_lags(self._model.predict, X, horizon_h)
 
     @property
     def feature_importances_(self) -> np.ndarray:

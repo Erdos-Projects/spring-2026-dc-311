@@ -1,0 +1,11 @@
+_target_: modeling.models.hurdle.HurdleXGBModel
+name: hurdle_xgb
+classifier_n_estimators: 300
+classifier_learning_rate: 0.05
+classifier_max_depth: 4
+regressor_n_estimators: 300
+regressor_learning_rate: 0.05
+regressor_max_depth: 6
+device: cuda
+min_positive_cases: 5
+random_state: 42

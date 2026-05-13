@@ -105,6 +105,7 @@ class xgb_sarimax:
         self.order = tuple(order)
         self.seasonal_order = tuple(seasonal_order)
         self.auto_order = auto_order
+        self.device = device
 
         self._xgb = XGBRegressor(
             n_estimators=n_estimators,

@@ -1,0 +1,9 @@
+_target_: modeling.models.ml.CatBoostPoissonModel
+name: catboost_poisson
+loss_function: Poisson
+iterations: 700
+learning_rate: 0.03
+depth: 5
+l2_leaf_reg: 5
+random_seed: 42
+verbose: false

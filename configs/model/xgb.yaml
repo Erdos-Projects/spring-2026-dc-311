@@ -4,4 +4,4 @@ n_estimators: 300
 learning_rate: 0.05
 max_depth: 6
 objective: "count:poisson"
-device: "cpu"
+device: "cuda"

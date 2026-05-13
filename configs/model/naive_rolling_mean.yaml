@@ -1,0 +1,3 @@
+_target_: modeling.models.naive.RollingMeanNaive
+name: naive_rolling_mean
+window: 28

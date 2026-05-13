@@ -7,6 +7,7 @@ statsmodels
 scikit-learn
 lightgbm
 xgboost
+catboost
 hydra-core
 omegaconf
 PyYAML

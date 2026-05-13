@@ -1,0 +1,2 @@
+_target_: modeling.models.naive.LastObservedNaive
+name: naive_last_observed

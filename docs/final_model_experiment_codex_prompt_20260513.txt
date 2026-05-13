@@ -1,0 +1,438 @@
+You are working in the repository on branch dev2.
+
+Goal:
+Extend the final model comparison pipeline so that we can test a broader set of machine learning models for the DC 311 pothole count forecasting task, while keeping the experiment plan and experiment results clearly documented in the docs folder.
+
+Important documentation requirement:
+The repository now has two markdown files:
+
+1. `docs/final_model_experiment_plan_20260513.md`
+2. `docs/final_model_experiment_20260513.md`
+
+Use them as the official documentation for this round of experiments.
+
+- `docs/final_model_experiment_plan_20260513.md` should contain the experiment plan.
+- `docs/final_model_experiment_20260513.md` should contain experiment results, run logs summary, model comparison tables, and conclusions.
+- Do not mix results into the plan document except for a short "Status" or "Planned vs Completed" section.
+- Do not mix long planning details into the results document except for a brief "Experiment Setup" section.
+- Both markdown files must start with a clear table of contents so users can quickly jump to the relevant experiment and result sections.
+
+Markdown documentation format requirement:
+At the top of each markdown file, use this structure:
+
+```markdown
+# Final Model Experiment Plan - 2026-05-13
+
+## Table of Contents
+- [Objective](#objective)
+- [Experiment Scope](#experiment-scope)
+- [Evaluation Protocol](#evaluation-protocol)
+- [Model Groups](#model-groups)
+- [Experiment Matrix](#experiment-matrix)
+- [Commands](#commands)
+- [Expected Outputs](#expected-outputs)
+- [Decision Rules](#decision-rules)
+- [Implementation Checklist](#implementation-checklist)
+- [Notes](#notes)
+```
+
+and:
+
+```markdown
+# Final Model Experiment Results - 2026-05-13
+
+## Table of Contents
+- [Executive Summary](#executive-summary)
+- [Experiment Setup](#experiment-setup)
+- [Runs Completed](#runs-completed)
+- [Model Comparison](#model-comparison)
+- [Underprediction Diagnostics](#underprediction-diagnostics)
+- [Per-Model Results](#per-model-results)
+- [Best Model Selection](#best-model-selection)
+- [Failures and Skipped Models](#failures-and-skipped-models)
+- [Artifacts](#artifacts)
+- [Conclusions](#conclusions)
+- [Next Steps](#next-steps)
+```
+
+If the files already contain content, preserve useful content and update it cleanly. Do not duplicate sections. If a section already exists, update it instead of appending another copy. Keep the table of contents synchronized with the section headings.
+
+Current context:
+- The current final comparison script is `modeling/final_model_comparison.py`.
+- The current candidate models are `linear_l1`, `xgb`, and `xgb_sarimax`.
+- Training and evaluation should use raw pothole count targets, not log1p targets.
+- All reported CV, validation, and test metrics must be computed on raw count scale.
+- Predictions must be clipped to `>= 0`.
+- Underprediction diagnostics already exist or should be preserved:
+  - `bias_mean = mean(actual - predicted)`
+  - `underprediction_rate = mean(actual > predicted)`
+  - `top25_bias_mean`
+  - `top25_underprediction_rate`
+  - `underpredicting` flag
+- Final model selection should still be based on lowest raw-count `test_mae`.
+- Old `results/` are reference only; new runs should create fresh outputs.
+
+Documentation workflow:
+Before implementing or running the expanded experiments:
+1. Update `docs/final_model_experiment_plan_20260513.md`.
+2. The plan document must include:
+   - Objective
+   - Experiment scope
+   - Evaluation protocol
+   - Raw-count target convention
+   - Dataset / ward / split / feature configuration
+   - Forecast horizon setting
+   - Model groups: fast, default, all
+   - Full experiment matrix
+   - Commands to run
+   - Expected outputs
+   - Decision rules for final model selection
+   - Underprediction diagnostic criteria
+   - Implementation checklist
+   - Notes about why `xgb_sarimax` is treated as optional ablation
+
+After running each experiment group:
+1. Update `docs/final_model_experiment_20260513.md`.
+2. The results document must include:
+   - Executive summary
+   - Experiment setup
+   - Commands actually run
+   - Models completed
+   - Models skipped or failed, with reasons
+   - Combined comparison table
+   - Underprediction diagnostics table
+   - Per-model result summaries
+   - Best model by `test_mae`
+   - Best model by `test_poisson_deviance`
+   - Least-underpredicting competitive model
+   - Artifacts created, including paths to JSON, CSV, plots, and result folders
+   - Conclusions
+   - Next steps
+
+For markdown tables:
+Use clear tables such as:
+
+```markdown
+| Model | test_mae | test_rmse | test_poisson_deviance | bias_mean | underprediction_rate | top25_bias_mean | top25_underprediction_rate | total_count_ratio | underpredicting |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|:---:|
+```
+
+For per-model sections in the results document, use stable headings:
+
+```markdown
+### xgb
+
+### lgbm_poisson
+
+### catboost_poisson
+
+### hurdle_xgb
+```
+
+This makes the table of contents useful and keeps the results easy to scan.
+
+Task:
+Add more model candidates to the final model comparison in a clean, modular way.
+
+Please implement the following additions.
+
+1. Add new model wrappers if they do not already exist.
+
+Add or update model classes under `modeling/models/` for:
+
+A. LightGBM Poisson model
+- Name: `lgbm_poisson`
+- Use `lightgbm.LGBMRegressor`
+- Default hyperparameters:
+  - `objective="poisson"`
+  - `n_estimators=500`
+  - `learning_rate=0.03`
+  - `num_leaves=31`
+  - `min_child_samples=20`
+  - `subsample=0.8`
+  - `colsample_bytree=0.8`
+  - `random_state=42`
+- It should follow the same interface as current models:
+  - `fit(X, y)`
+  - `predict(X, recursive=False, horizon_h=None, **kwargs)`
+- It must support autoregressive recursive prediction if `pothole_lag*` columns exist, using the same block-recursive logic as `XGBModel`.
+- Clip predictions to `>= 0`.
+
+B. CatBoost Poisson model
+- Name: `catboost_poisson`
+- Use `catboost.CatBoostRegressor`
+- Default hyperparameters:
+  - `loss_function="Poisson"`
+  - `iterations=700`
+  - `learning_rate=0.03`
+  - `depth=5`
+  - `l2_leaf_reg=5`
+  - `random_seed=42`
+  - `verbose=False`
+- CPU is acceptable unless GPU support is already straightforward and reliable.
+- Same interface:
+  - `fit(X, y)`
+  - `predict(X, recursive=False, horizon_h=None, **kwargs)`
+- Support recursive prediction with `pothole_lag*` columns.
+- Clip predictions to `>= 0`.
+- If CatBoost is not installed, fail with a clear ImportError explaining how to install it.
+
+C. Scikit-learn HistGradientBoosting Poisson model
+- Name: `histgb_poisson`
+- Use `sklearn.ensemble.HistGradientBoostingRegressor`
+- Default hyperparameters:
+  - `loss="poisson"`
+  - `max_iter=300`
+  - `learning_rate=0.03`
+  - `max_leaf_nodes=15`
+  - `l2_regularization=1.0`
+  - `random_state=42`
+- Same interface and prediction clipping.
+- Support recursive prediction with `pothole_lag*` columns.
+
+D. RandomForest and ExtraTrees regressors as non-boosting ML baselines
+- Names:
+  - `random_forest`
+  - `extra_trees`
+- Use:
+  - `RandomForestRegressor`
+  - `ExtraTreesRegressor`
+- Defaults:
+  - `n_estimators=500`
+  - `max_depth=8`
+  - `min_samples_leaf=5`
+  - `random_state=42`
+  - `n_jobs=-1`
+- Same interface and prediction clipping.
+- Support recursive prediction with `pothole_lag*` columns.
+
+2. Add stronger naive baselines.
+
+Current reviewer feedback emphasized comparing against naive baselines. Add explicit transparent baselines, separate from ML models:
+
+A. LastObservedNaive
+- Name: `naive_last_observed`
+- Predict the most recent available target value from training for all test rows, with optional assimilation at block boundaries if supported by the existing evaluation design.
+- Keep implementation simple and transparent.
+
+B. RollingMeanNaive
+- Name: `naive_rolling_mean`
+- Predict the mean of the most recent `window` target values from training.
+- Default `window=28`.
+- If assimilation is enabled and true Ys are passed, update the rolling history after each prediction block or row, following the same evaluation assumptions used in the rest of the code.
+
+C. SameDOWRollingMeanNaive
+- Name: `naive_same_dow_rolling_mean`
+- Predict the recent average target for the same day-of-week.
+- Default `window=8` same-DOW observations.
+- Should use DOW columns if available; otherwise infer DOW if a date column is available. If neither is available, raise a clear error.
+
+Important:
+- Keep these baselines honest.
+- They should not peek into future test labels except where the existing comparison explicitly uses `assimilate=True` in a walk-forward way.
+- Document the evaluation assumption in code comments and in `docs/final_model_experiment_plan_20260513.md`.
+
+3. Optional but valuable: add a two-stage hurdle model.
+
+Implement a simple HurdleRegressor wrapper.
+
+Name:
+- `hurdle_xgb`
+- Optional second version:
+  - `hurdle_lgbm`
+
+For `hurdle_xgb`:
+- Stage 1: binary classifier predicting `Y > 0`
+  - Use `xgboost.XGBClassifier`
+  - `objective="binary:logistic"`
+  - `n_estimators=300`
+  - `learning_rate=0.05`
+  - `max_depth=4`
+  - `device` should be configurable, default `"cpu"`, but allow `"cuda"`.
+- Stage 2: count regressor for positive cases only
+  - Use the existing XGB count regressor or a new internal `XGBRegressor`
+  - `objective="count:poisson"`
+  - Fit only rows where `y > 0`.
+- Prediction:
+  - `p_positive = classifier.predict_proba(X)[:, 1]`
+  - `positive_count = regressor.predict(X)`
+  - final prediction = `p_positive * positive_count`
+  - clip to `>= 0`.
+- If there are too few positive cases in training, fall back safely to a simple mean positive-count regressor and document this behavior.
+- Support recursive prediction if `pothole_lag*` columns exist.
+
+4. Register all new models.
+
+Update `modeling/models/__init__.py` so all new model classes can be instantiated through the existing model registry / build_model mechanism.
+
+Add config files under `configs/model/` for:
+
+- `lgbm_poisson.yaml`
+- `catboost_poisson.yaml`
+- `histgb_poisson.yaml`
+- `random_forest.yaml`
+- `extra_trees.yaml`
+- `naive_last_observed.yaml`
+- `naive_rolling_mean.yaml`
+- `naive_same_dow_rolling_mean.yaml`
+- `hurdle_xgb.yaml`
+
+Use `_target_` paths consistent with the model registry.
+
+5. Extend `modeling/final_model_comparison.py`.
+
+Update the script so it supports the expanded model list.
+
+Default model set should be:
+
+- `naive_last_observed`
+- `naive_rolling_mean`
+- `naive_same_dow_rolling_mean`
+- `linear_l1`
+- `random_forest`
+- `extra_trees`
+- `histgb_poisson`
+- `lgbm_poisson`
+- `catboost_poisson`
+- `xgb`
+- `hurdle_xgb`
+
+Do not include `xgb_sarimax` in the default model list anymore. Keep it runnable via `--models xgb_sarimax`, but treat it as an optional ablation, not a default candidate.
+
+The CLI should allow:
+
+```bash
+python -m modeling.final_model_comparison --models xgb lgbm_poisson catboost_poisson
+python -m modeling.final_model_comparison --models all
+python -m modeling.final_model_comparison --models default
+python -m modeling.final_model_comparison --models fast
+```
+
+Suggested groups:
+- `fast`:
+  - `naive_last_observed`
+  - `naive_rolling_mean`
+  - `naive_same_dow_rolling_mean`
+  - `linear_l1`
+  - `histgb_poisson`
+  - `xgb`
+- `default`:
+  - the default list above
+- `all`:
+  - default list plus `xgb_sarimax` and any other existing registered models that are safe to run
+
+6. Preserve GPU behavior.
+
+- XGB and `hurdle_xgb` should support `device="cuda"` if the existing GPU check passes.
+- LightGBM and CatBoost can use CPU unless GPU support is already configured safely.
+- The script should not silently fallback from CUDA to CPU for XGB if the user explicitly asks for GPU.
+- If a model is CPU-only, log that clearly.
+- Record the actual device used in:
+  - per-model metrics JSON
+  - combined comparison CSV
+  - `docs/final_model_experiment_20260513.md`
+
+7. Save richer outputs.
+
+For each model, save:
+
+A. Per-model metrics JSON:
+- `cv_mae`
+- `cv_rmse`
+- `cv_poisson_deviance`
+- `test_mae`
+- `test_rmse`
+- `test_poisson_deviance`
+- `bias_mean`
+- `underprediction_rate`
+- `top25_bias_mean`
+- `top25_underprediction_rate`
+- `underpredicting`
+- `sum_actual`
+- `sum_predicted`
+- `total_count_ratio = sum_predicted / sum_actual`
+- `model_name`
+- `target_scale="raw_counts"`
+- `device`
+
+B. Per-model predictions CSV:
+- `date`
+- `actual`
+- `predicted`
+- `residual_actual_minus_predicted`
+- `model_name`
+- `split`
+- `horizon_h`
+
+C. Combined comparison CSV:
+- one row per model
+- sorted by `test_mae` ascending
+
+D. Combined comparison Markdown or text summary:
+- include the best model by `test_mae`
+- include the best model by `test_poisson_deviance`
+- include the least underpredicting model among models with competitive MAE
+- explicitly flag if the lowest-MAE model is underpredicting badly
+
+E. Documentation update:
+- Add links or paths to all created artifacts in `docs/final_model_experiment_20260513.md`.
+- Include the combined comparison table in markdown format.
+- Include a short summary paragraph explaining the main takeaway from the run.
+
+8. Add plots if plotting utilities already exist.
+
+Generate at least:
+- actual vs predicted over time for each model
+- residuals over time for each model
+- comparison bar chart for test MAE
+- comparison bar chart for bias_mean
+- actual vs predicted scatter for each model
+
+If plotting would add too much complexity, implement only the CSV/JSON outputs and leave plotting as TODO in:
+- `docs/final_model_experiment_plan_20260513.md`
+- `docs/final_model_experiment_20260513.md`
+
+9. Add tests / smoke checks.
+
+At minimum run:
+
+```bash
+/data/rpan/miniconda3/envs/dsproj/bin/python -m compileall modeling
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.final_model_comparison --models fast
+/data/rpan/miniconda3/envs/dsproj/bin/python -m modeling.final_model_comparison --models xgb lgbm_poisson histgb_poisson
+```
+
+If CatBoost or LightGBM is missing from the environment:
+- The script should either skip the unavailable model with a clear warning when running a group, or fail clearly when that specific model is requested.
+- Prefer clear warnings for group runs and clear failure for explicitly requested single models.
+- Record skipped models and failure reasons in `docs/final_model_experiment_20260513.md`.
+
+10. Code quality requirements.
+
+- Avoid duplicating recursive prediction code across many wrappers.
+- If possible, add a shared helper function in `modeling/models/utils.py`, e.g.:
+  - `recursive_predict_with_lags(base_predict_fn, X, horizon_h)`
+- Keep all models using the same raw-count target convention.
+- No `breakpoint()`.
+- No hidden `log1p` target transform.
+- No test-set leakage.
+- Keep old result directories untouched.
+- Update README or add a short experiment note explaining that `xgb_sarimax` is now considered an optional ablation because autoregressive lag features already make XGB autoregressive.
+- Keep the two docs files clean, easy to scan, and synchronized with the experiment outputs.
+
+Deliverables:
+- New/updated model wrapper files.
+- New/updated model config YAMLs.
+- Updated model registry.
+- Updated `final_model_comparison.py`.
+- Updated `docs/final_model_experiment_plan_20260513.md`.
+- Updated `docs/final_model_experiment_20260513.md`.
+- New comparison outputs after running at least the `fast` group.
+- A brief summary in `docs/final_model_experiment_20260513.md` of:
+  - which models ran successfully
+  - which models failed or were skipped
+  - which model currently wins by raw-count `test_mae`
+  - whether the winning model is underpredicting
+  - which model has the best underprediction behavior among competitive models
+
+Do not consider the task complete unless both markdown docs have been updated with a table of contents and the results document contains the actual experiment outcomes from at least the fast model group.
