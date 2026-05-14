@@ -40,6 +40,7 @@ def _predict_for_eval(
     X_test: pd.DataFrame,
     Ys=None,
     horizon_h: int | None = None,
+    d: int | None = None,
 ) -> np.ndarray:
     """Predict through the common model API."""
     return model.predict(
@@ -48,7 +49,19 @@ def _predict_for_eval(
         horizon_h=horizon_h,
         assimilate=True,
         Ys=Ys,
+        d=d,
+        return_index=True,
     )
+
+
+def _align_prediction_result(pred_result, y: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return predictions, matching y values, and scored row indices."""
+    if isinstance(pred_result, tuple):
+        preds, idx = pred_result
+        idx = np.asarray(idx, dtype=int)
+        return np.asarray(preds), np.asarray(y)[idx], idx
+    idx = np.arange(len(y))
+    return np.asarray(pred_result), np.asarray(y), idx
 
 
 def _load_run(cfg: DictConfig) -> tuple[Path, DictConfig]:
@@ -152,12 +165,15 @@ def evaluate(cfg: DictConfig) -> dict:
         X_test,
         Ys=y_test,
         horizon_h=horizon_h,
+        d=int(feat_params.d),
     )
+    preds, y_test_scored, scored_idx = _align_prediction_result(preds, y_test)
+    test_df_scored = test_df.iloc[scored_idx].reset_index(drop=True)
     breakpoint()
     metrics = {
-        "test_mae":              float(mae(y_test, preds)),
-        "test_rmse":             float(rmse(y_test, preds)),
-        "test_poisson_deviance": float(poisson_deviance(y_test, preds)),
+        "test_mae":              float(mae(y_test_scored, preds)),
+        "test_rmse":             float(rmse(y_test_scored, preds)),
+        "test_poisson_deviance": float(poisson_deviance(y_test_scored, preds)),
     }
     breakpoint()
     print("\n=== Test Set Evaluation ===")
@@ -173,7 +189,7 @@ def evaluate(cfg: DictConfig) -> dict:
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
     breakpoint()
-    plot_path = plot_diagnostics(test_df, y_test, preds, model, run_cfg, run_dir)
+    plot_path = plot_diagnostics(test_df_scored, y_test_scored, preds, model, run_cfg, run_dir)
     breakpoint()
     # ── wandb logging ─────────────────────────────────────────────────────────
     if cfg.wandb.enabled:

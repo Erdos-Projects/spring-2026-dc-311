@@ -80,8 +80,8 @@ def assemble_features(
     df = pothole_df.merge(w, on="date", how="left")
 
     # ── Target ────────────────────────────────────────────────────────────────
-    # Y_t = sum(P_{t+1}, …, P_{t+d})
-    df["Y"] = df["pothole_count"].rolling(d).sum().shift(-d)
+    # Y_t = sum(P_t, …, P_{t+d-1})
+    df["Y"] = df["pothole_count"].rolling(d).sum().shift(-(d - 1))
 
     # ── Autoregressive lags (lagged Y for forecast-time consistency) ───────────
     for k in range(1, k_AR + 1):

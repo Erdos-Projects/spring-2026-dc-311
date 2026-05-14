@@ -3,7 +3,7 @@ import pandas as pd
 from pmdarima import auto_arima
 from statsmodels.tsa.arima.model import ARIMA
 
-from modeling.models.utils import validate_horizon_h
+from modeling.models.utils import block_step, validate_horizon_h
 
 
 class SARIMAModel:
@@ -76,22 +76,33 @@ class SARIMAModel:
         horizon_h: int | None = None,
         assimilate: bool = False,
         Ys=None,
+        d: int | None = None,
+        return_index: bool = False,
         **kwargs,
     ) -> np.ndarray:
         if self._result is None:
             raise RuntimeError("Call fit() before predict().")
         if horizon_h is not None and assimilate and Ys is not None:
-            return self._predict_blocks_assimilating(X, Ys, horizon_h)
+            if d is None:
+                raise ValueError("d is required for horizon_h block prediction.")
+            return self._predict_blocks_assimilating(
+                X, Ys, horizon_h, d, return_index=return_index
+            )
         preds = np.asarray(self._result.forecast(steps=len(X)), dtype=float)
-        return np.clip(preds, 0, None)
+        preds = np.clip(preds, 0, None)
+        return (preds, np.arange(len(X))) if return_index else preds
 
     def _predict_blocks_assimilating(
         self,
         X: pd.DataFrame,
         Ys,
         horizon_h: int,
-    ) -> np.ndarray:
+        d: int,
+        return_index: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         h = validate_horizon_h(horizon_h)
+        step = block_step(h, d)
+        warmup = int(d) - 1
         y_values = pd.Series(Ys).astype(float).reset_index(drop=True)
         if len(y_values) != len(X):
             raise ValueError(
@@ -99,18 +110,27 @@ class SARIMAModel:
             )
 
         preds = []
+        scored_indices = []
         state = self._result
-        for block_start in range(0, len(X), h):
+        for block_start in range(0, len(X), step):
             block_end = min(block_start + h, len(X))
             block_len = block_end - block_start
 
             block_preds = np.asarray(state.forecast(steps=block_len), dtype=float)
-            preds.extend(block_preds)
+            scored = block_preds[warmup:]
+            indices = list(range(block_start + warmup, block_end))
+            if len(scored) == 0:
+                break
 
-            y_block = y_values.iloc[block_start:block_end].to_numpy(dtype=float)
-            state = state.append(y_block, refit=False)
+            preds.append(scored)
+            scored_indices.extend(indices)
 
-        return np.clip(np.asarray(preds), 0, None)
+            y_revealed = y_values.iloc[indices].to_numpy(dtype=float)
+            state = state.append(y_revealed, refit=False)
+
+        out = np.clip(np.concatenate(preds) if preds else np.array([]), 0, None)
+        idx = np.asarray(scored_indices, dtype=int)
+        return (out, idx) if return_index else out
 
     def summary(self):
         return self._result.summary() if self._result else None

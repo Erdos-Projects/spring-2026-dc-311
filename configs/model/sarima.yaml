@@ -1,6 +1,6 @@
 _target_: modeling.models.sarima.SARIMAModel
 name: sarima
-order: [1, 0, 0]
+order: [0, 1, 0]
 seasonal_order: [0, 0, 0, 0]
 trend: null
 auto_order: false
@@ -9,6 +9,6 @@ m: 7
 stepwise: true
 suppress_warnings: true
 error_action: ignore
-trace: false
+trace: true
 enforce_stationarity: true
 enforce_invertibility: true

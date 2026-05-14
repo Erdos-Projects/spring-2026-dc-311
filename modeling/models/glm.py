@@ -52,6 +52,8 @@ class NegBinGLM:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        d: int | None = None,
+        return_index: bool = False,
         **kwargs,
     ) -> np.ndarray:
         if self._result is None:
@@ -61,15 +63,18 @@ class NegBinGLM:
         if not recursive or len(ar_cols) == 0:
             X_const = sm.add_constant(X.astype(float), has_constant="add")
             preds = self._result.predict(X_const)
-            return np.clip(preds, 0, None)
+            preds = np.clip(preds, 0, None)
+            return (preds, np.arange(len(X))) if return_index else preds
 
         if horizon_h is not None:
-            return predict_in_blocks(self, X, horizon_h)
+            if d is None:
+                raise ValueError("d is required for horizon_h block prediction.")
+            return predict_in_blocks(self, X, horizon_h, d, return_index=return_index)
 
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         X_work = X.copy().astype(float)
         preds = []
-        print(f"Using recursive prediction with k_AR = {k_AR}")
+        # print(f"Using recursive prediction with k_AR = {k_AR}")
         for i in range(len(X)):
             if i > 0:
                 for k in range(1, min(i, k_AR) + 1):
@@ -79,7 +84,8 @@ class NegBinGLM:
             X_const = sm.add_constant(X_work.iloc[[i]], has_constant="add")
             pred_i = self._result.predict(X_const).item()
             preds.append(max(0.0, pred_i))
-        return np.array(preds)
+        preds = np.array(preds)
+        return (preds, np.arange(len(X))) if return_index else preds
 
     def summary(self):
         return self._result.summary() if self._result else None

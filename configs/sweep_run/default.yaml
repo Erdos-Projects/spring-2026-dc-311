@@ -1,8 +1,8 @@
 # Number of trials this agent runs before exiting.
-count: 50
+count: 100
 
 # Number of W&B agents to run in parallel.
-parallel_agents: 1
+parallel_agents: 16
 
 # Sweep ID returned by `wandb sweep`. Must be set before running the agent.
 sweep_id: null

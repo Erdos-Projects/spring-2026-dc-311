@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 import contextlib
 import sys
 
-from modeling.models.utils import validate_horizon_h
+from modeling.models.utils import block_step, validate_horizon_h
 
 class _LoggerWriter:
     """File-like writer that mirrors stdout text to logger."""
@@ -155,16 +155,23 @@ class xgb_sarimax:
         horizon_h: int | None = None,
         assimilate: bool = False,
         Ys=None,
+        d: int | None = None,
+        return_index: bool = False,
         **kwargs,
     ) -> np.ndarray:
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
         if assimilate and Ys is not None and horizon_h is not None:
-            return self._predict_blocks_assimilating(X, Ys, horizon_h, ar_cols)
+            if d is None:
+                raise ValueError("d is required for horizon_h block prediction.")
+            return self._predict_blocks_assimilating(
+                X, Ys, horizon_h, d, ar_cols, return_index=return_index
+            )
 
         if not recursive or len(ar_cols) == 0:
             xgb_pred = self._xgb.predict(X)
             correction = self._sarimax_result.forecast(steps=len(X))
-            return xgb_pred + correction
+            preds = xgb_pred + correction
+            return (preds, np.arange(len(X))) if return_index else preds
 
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         print(f"Using recursive prediction with k_AR = {k_AR}")
@@ -193,19 +200,24 @@ class xgb_sarimax:
                         X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
                 xgb_i = self._xgb.predict(X_work.iloc[[i]])[0]
                 preds.append(xgb_i + correction[i])
-        return np.array(preds)
+        preds = np.array(preds)
+        return (preds, np.arange(len(X))) if return_index else preds
 
     def _predict_blocks_assimilating(
         self,
         X: pd.DataFrame,
         Ys,
         horizon_h: int,
+        d: int,
         ar_cols: list[str],
+        return_index: bool = False,
     ) -> np.ndarray:
         if self._sarimax_result is None:
             raise RuntimeError("Call fit() before predict().")
 
         h = validate_horizon_h(horizon_h)
+        step = block_step(h, d)
+        warmup = int(d) - 1
         y_values = pd.Series(Ys).astype(float).reset_index(drop=True)
         if len(y_values) != len(X):
             raise ValueError(
@@ -214,13 +226,14 @@ class xgb_sarimax:
 
         X_work = X.copy()
         preds = []
+        scored_indices = []
         residual_state = self._sarimax_result
 
         k_AR = 0
         if ar_cols:
             k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
 
-        for block_start in range(0, len(X), h):
+        for block_start in range(0, len(X), step):
             block_end = min(block_start + h, len(X))
             block_len = block_end - block_start
             corrections = np.asarray(residual_state.forecast(steps=block_len), dtype=float)
@@ -241,13 +254,23 @@ class xgb_sarimax:
 
                 block_xgb_preds.append(xgb_i)
                 block_preds.append(pred_i)
-                preds.append(pred_i)
 
-            y_block = y_values.iloc[block_start:block_end].to_numpy(dtype=float)
-            true_resids = y_block - np.asarray(block_xgb_preds, dtype=float)
+            scored = np.asarray(block_preds[warmup:], dtype=float)
+            scored_xgb = np.asarray(block_xgb_preds[warmup:], dtype=float)
+            indices = list(range(block_start + warmup, block_end))
+            if len(scored) == 0:
+                break
+
+            preds.extend(scored)
+            scored_indices.extend(indices)
+
+            y_revealed = y_values.iloc[indices].to_numpy(dtype=float)
+            true_resids = y_revealed - scored_xgb
             residual_state = residual_state.append(true_resids, refit=False)
 
-        return np.asarray(preds)
+        out = np.asarray(preds)
+        idx = np.asarray(scored_indices, dtype=int)
+        return (out, idx) if return_index else out
 
     @property
     def feature_importances_(self) -> np.ndarray:

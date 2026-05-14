@@ -32,12 +32,22 @@ from modeling.metrics import mae, rmse, poisson_deviance
 from modeling.models import build_model
 from modeling.split import make_split
 
+
+def _align_prediction_result(pred_result, y: pd.Series) -> tuple[np.ndarray, np.ndarray]:
+    """Return predictions and matching y values when block prediction drops warm-up rows."""
+    if isinstance(pred_result, tuple):
+        preds, idx = pred_result
+        return np.asarray(preds), y.iloc[np.asarray(idx, dtype=int)].values
+    return np.asarray(pred_result), y.values
+
+
 def cross_val(
     cfg_model,
     X: pd.DataFrame,
     y: pd.Series,
     k: int = 5,
     horizon_h: int | None = None,
+    d: int | None = None,
 ) -> dict:
     """
     Time-series CV on the training set; returns mean metrics and per-fold lists.
@@ -57,10 +67,13 @@ def cross_val(
             horizon_h=horizon_h,
             assimilate=True,
             Ys=y_v,
+            d=d,
+            return_index=True,
         )
-        fold_mae.append(mae(y_v.values, preds))
-        fold_rmse.append(rmse(y_v.values, preds))
-        fold_pd.append(poisson_deviance(y_v.values, preds))
+        preds, y_score = _align_prediction_result(preds, y_v)
+        fold_mae.append(mae(y_score, preds))
+        fold_rmse.append(rmse(y_score, preds))
+        fold_pd.append(poisson_deviance(y_score, preds))
 
     # return the CV metrics and the raw data
     return {
@@ -190,6 +203,7 @@ def train(cfg: DictConfig) -> dict:
         cfg.model, X_train, y_train,
         k=5,
         horizon_h=horizon_h,
+        d=int(cfg.features.d),
     )
     print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
     breakpoint()
@@ -235,11 +249,14 @@ def train(cfg: DictConfig) -> dict:
         horizon_h=horizon_h,
         assimilate=True,
         Ys=val_df["Y"],
+        d=int(cfg.features.d),
+        return_index=True,
     )
+    val_preds, y_val_score = _align_prediction_result(val_preds, val_df["Y"])
     val_metrics = {
-        "val_mae":              float(mae(val_df["Y"].values, val_preds)), # calculate the MAE for the val set
-        "val_rmse":             float(rmse(val_df["Y"].values, val_preds)), # calculate the RMSE for the val set
-        "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, val_preds)), # calculate the Poisson deviance for the val set
+        "val_mae":              float(mae(y_val_score, val_preds)), # calculate the MAE for the val set
+        "val_rmse":             float(rmse(y_val_score, val_preds)), # calculate the RMSE for the val set
+        "val_poisson_deviance": float(poisson_deviance(y_val_score, val_preds)), # calculate the Poisson deviance for the val set
     }
 
     if cfg.wandb.enabled:

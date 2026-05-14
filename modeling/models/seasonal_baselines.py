@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+from modeling.models.utils import block_step, validate_horizon_h
+
 
 class _LagNaiveBase:
     """Seasonal lookup baseline with train-mean fallback."""
@@ -48,6 +50,8 @@ class _LagNaiveBase:
         horizon_h: int | None = None,
         assimilate: bool = False,
         Ys=None,
+        d: int | None = None,
+        return_index: bool = False,
         **kwargs,
     ) -> np.ndarray:
         if self._mean_y is None:
@@ -62,6 +66,13 @@ class _LagNaiveBase:
                     f"values for {len(X)} rows."
                 )
 
+        if assimilate and y_values is not None and horizon_h is not None:
+            if d is None:
+                raise ValueError("d is required for horizon_h block assimilation.")
+            return self._predict_blocks_assimilating(
+                X, y_values, horizon_h, d, return_index=return_index
+            )
+
         preds = np.zeros(len(X), dtype=float)
         for i, (_, row) in enumerate(X.iterrows()):
             key = self._make_key(row)
@@ -69,7 +80,43 @@ class _LagNaiveBase:
 
             if assimilate and y_values is not None and pd.notna(y_values.iloc[i]):
                 self.lookup_table[key] = float(y_values.iloc[i])
-        return preds
+        return (preds, np.arange(len(X))) if return_index else preds
+
+    def _predict_blocks_assimilating(
+        self,
+        X: pd.DataFrame,
+        y_values: pd.Series,
+        horizon_h: int,
+        d: int,
+        return_index: bool = False,
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        h = validate_horizon_h(horizon_h)
+        step = block_step(h, d)
+
+        preds = []
+        scored_indices = []
+        for block_start in range(0, len(X), step):
+            block_end = min(block_start + step, len(X))
+            block_keys = []
+            block_preds = []
+
+            for i in range(block_start, block_end):
+                row = X.iloc[i]
+                key = self._make_key(row)
+                block_keys.append(key)
+                block_preds.append(max(0.0, float(self.lookup_table.get(key, self._fallback_value()))))
+
+            preds.extend(block_preds)
+            scored_indices.extend(range(block_start, block_end))
+
+            for offset, key in enumerate(block_keys):
+                y_i = y_values.iloc[block_start + offset]
+                if pd.notna(y_i):
+                    self.lookup_table[key] = float(y_i)
+
+        out = np.asarray(preds, dtype=float)
+        idx = np.asarray(scored_indices, dtype=int)
+        return (out, idx) if return_index else out
 
 
 class LastWeekNaive(_LagNaiveBase):

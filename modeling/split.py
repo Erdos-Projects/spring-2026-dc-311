@@ -76,16 +76,16 @@ def _purge_target_bleed(
 
     The target is a future aggregate:
 
-        Y_t = sum(P_{t+1}, ..., P_{t+d})
+        Y_t = sum(P_t, ..., P_{t+d-1})
 
-    Therefore, a row dated t uses observed pothole counts through t + d.
+    Therefore, a row dated t uses observed pothole counts through t + d - 1.
     A chronological split prevents feature rows from being randomly mixed, but
     it does not by itself prevent labels near a split boundary from reaching
     into the next split.
 
     Example with d = 7:
       If train ends on 2024-09-30, a train row dated 2024-09-25 has a target
-      ending on 2024-10-02. That label uses validation-period counts, so the
+      ending on 2024-10-01. That label uses validation-period counts, so the
       row must be removed from train.
 
     This function keeps only:
@@ -104,7 +104,7 @@ def _purge_target_bleed(
 
     d = int(features.d)
     dates = pd.to_datetime(df["date"]).dt.normalize()
-    target_end_dates = dates + pd.to_timedelta(d, unit="D")
+    target_end_dates = dates + pd.to_timedelta(d - 1, unit="D")
 
     train_end = _split_end_date(df, "train")
     val_end = _split_end_date(df, "val")

@@ -12,23 +12,53 @@ def validate_horizon_h(horizon_h: int | None) -> int | None:
     return h
 
 
-def predict_in_blocks(model, X: pd.DataFrame, horizon_h: int) -> np.ndarray:
-    """
-    Predict recursively in fixed-length blocks.
+def block_step(horizon_h: int, d: int) -> int:
+    """Return scored-step length when horizon_h includes d - 1 warm-up rows."""
+    h = validate_horizon_h(horizon_h)
+    d = int(d)
+    if d <= 0:
+        raise ValueError("d must be a positive integer.")
+    step = h - d + 1
+    if step <= 0:
+        raise ValueError(f"horizon_h={h} is too short for d={d}; need horizon_h >= d.")
+    return step
 
-    Each block calls the model's existing full-recursive path on only that
-    block, so lag features reset to their original true values at boundaries.
+
+def predict_in_blocks(
+    model,
+    X: pd.DataFrame,
+    horizon_h: int,
+    d: int,
+    return_index: bool = False,
+) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+    """
+    Predict recursively in overlapping rollout blocks.
+
+    horizon_h is the total rollout length. The first d - 1 predictions are
+    warm-up rows; only the remaining rows are returned for scoring.
     """
     h = validate_horizon_h(horizon_h)
     if h is None:
         raise ValueError("horizon_h is required for blocked prediction.")
+    d = int(d)
+    step = block_step(h, d)
+    warmup = d - 1
 
     preds: list[np.ndarray] = []
-    for start in tqdm(range(0, len(X), h), desc="Predicting in blocks"):
-        X_block = X.iloc[start : start + h]
+    scored_indices: list[int] = []
+    for start in tqdm(range(0, len(X), step), desc="Predicting in blocks"):
+        block_end = min(start + h, len(X))
+        X_block = X.iloc[start:block_end]
         block_preds = model.predict(X_block, recursive=True, horizon_h=None)
-        preds.append(np.asarray(block_preds))
+        scored = np.asarray(block_preds)[warmup:]
+        indices = list(range(start + warmup, block_end))
+        if len(scored) == 0:
+            break
+        preds.append(scored)
+        scored_indices.extend(indices)
 
-    if not preds:
-        return np.array([])
-    return np.concatenate(preds)
+    out = np.concatenate(preds) if preds else np.array([])
+    idx = np.asarray(scored_indices, dtype=int)
+    if return_index:
+        return out, idx
+    return out

@@ -37,7 +37,15 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
     pothole_df, weather_df = build_daily(cfg)
     print(f"[{agent_label}] Data loaded. Joining sweep {sweep_id} …")
 
-    feature_names = ["d", "d_p", "l_p", "d_s", "l_s", "d_f", "l_f", "k_AR"]
+    feature_names = [
+        "d",
+        "d_p", "l_p",
+        "d_s", "l_s",
+        "d_f", "l_f",
+        "d_sm07", "l_sm07",
+        "d_sm728", "l_sm728",
+        "k_AR",
+    ]
 
     def trial():
         with wandb.init() as run:
@@ -72,12 +80,19 @@ def _run_single_agent(cfg: DictConfig, count: int, agent_label: str = "agent-1")
                     horizon_h=horizon_h,
                     assimilate=True,
                     Ys=val_df["Y"],
+                    d=int(params.d),
+                    return_index=True,
                 )
+                if isinstance(preds, tuple):
+                    preds, scored_idx = preds
+                    y_val = val_df["Y"].iloc[scored_idx].values
+                else:
+                    y_val = val_df["Y"].values
 
                 run.log({
-                    "val_mae":              float(mae(val_df["Y"].values, preds)),
-                    "val_rmse":             float(rmse(val_df["Y"].values, preds)),
-                    "val_poisson_deviance": float(poisson_deviance(val_df["Y"].values, preds)),
+                    "val_mae":              float(mae(y_val, preds)),
+                    "val_rmse":             float(rmse(y_val, preds)),
+                    "val_poisson_deviance": float(poisson_deviance(y_val, preds)),
                     "n_features":           len(feature_cols),
                 })
 

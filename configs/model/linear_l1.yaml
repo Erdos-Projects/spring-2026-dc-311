@@ -6,5 +6,5 @@ fit_intercept: true
 standardize: true
 max_iter: 10000
 tune_alpha: true
-alpha_grid: [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+alpha_grid: [0.0001, 0.001, 0.01, 0.1, 1.0, 10.0]
 cv_splits: 5

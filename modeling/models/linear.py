@@ -105,6 +105,8 @@ class RegularizedLinearModel:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        d: int | None = None,
+        return_index: bool = False,
         **kwargs,
     ) -> np.ndarray:
         if self._model is None:
@@ -113,10 +115,13 @@ class RegularizedLinearModel:
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
         if not recursive or len(ar_cols) == 0:
             preds = self._model.predict(X.astype(float))
-            return np.clip(preds, 0, None)
+            preds = np.clip(preds, 0, None)
+            return (preds, np.arange(len(X))) if return_index else preds
 
         if horizon_h is not None:
-            return predict_in_blocks(self, X, horizon_h)
+            if d is None:
+                raise ValueError("d is required for horizon_h block prediction.")
+            return predict_in_blocks(self, X, horizon_h, d, return_index=return_index)
 
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         X_work = X.copy().astype(float)
@@ -130,7 +135,8 @@ class RegularizedLinearModel:
                         X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
             pred_i = self._model.predict(X_work.iloc[[i]])[0]
             preds.append(max(0.0, pred_i))
-        return np.array(preds)
+        preds = np.array(preds)
+        return (preds, np.arange(len(X))) if return_index else preds
 
     @property
     def coef_(self) -> np.ndarray:
