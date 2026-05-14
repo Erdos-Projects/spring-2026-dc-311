@@ -4,6 +4,7 @@ from lightgbm import LGBMRegressor
 
 from modeling.models.utils import (
     ar_lag_columns,
+    normalize_predict_kwargs,
     recursive_predict_with_lags,
     resolve_sample_weight,
 )
@@ -56,8 +57,15 @@ class LGBMModel:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         ar_cols = ar_lag_columns(X)
         if not recursive or len(ar_cols) == 0:
             return np.clip(self._model.predict(X), 0, None)
@@ -127,8 +135,15 @@ class XGBModel:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         ar_cols = ar_lag_columns(X)
         if not recursive or len(ar_cols) == 0:
             return np.clip(self._model.predict(X), 0, None)

@@ -51,6 +51,40 @@ def validate_horizon_h(horizon_h: int | None) -> int | None:
     return h
 
 
+def normalize_predict_kwargs(
+    *,
+    horizon_h: int | None = None,
+    Ys=None,
+    kwargs: dict | None = None,
+) -> tuple[int | None, object, dict]:
+    """
+    Normalize project predict kwargs while keeping ``horizon_h`` canonical.
+
+    ``horizon`` is accepted as a teammate-style alias for ``horizon_h``.
+    ``y`` is accepted as an alias for ``Ys`` so callers do not need a
+    positional target argument for walk-forward assimilation.
+    """
+    cleaned = dict(kwargs or {})
+
+    if "horizon" in cleaned:
+        horizon = cleaned.pop("horizon")
+        if horizon_h is not None and horizon is not None:
+            if validate_horizon_h(horizon_h) != validate_horizon_h(horizon):
+                raise ValueError(
+                    "Received conflicting horizon_h and horizon values: "
+                    f"{horizon_h!r} != {horizon!r}."
+                )
+        elif horizon_h is None:
+            horizon_h = horizon
+
+    if "y" in cleaned:
+        y_alias = cleaned.pop("y")
+        if Ys is None:
+            Ys = y_alias
+
+    return validate_horizon_h(horizon_h), Ys, cleaned
+
+
 def predict_in_blocks(model, X: pd.DataFrame, horizon_h: int) -> np.ndarray:
     """
     Predict recursively in fixed-length blocks.
@@ -93,6 +127,8 @@ def recursive_predict_with_lags(
 
     h = validate_horizon_h(horizon_h)
     X_work = X.copy()
+    for col in ar_cols:
+        X_work[col] = X_work[col].astype(float)
     preds: list[float] = []
 
     if h is None:

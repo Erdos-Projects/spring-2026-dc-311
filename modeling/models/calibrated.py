@@ -2,6 +2,8 @@
 
 import numpy as np
 
+from modeling.models.utils import normalize_predict_kwargs
+
 
 class MultiplicativeCalibratedModel:
     """Apply a fixed multiplicative factor to a fitted model's predictions."""
@@ -12,8 +14,29 @@ class MultiplicativeCalibratedModel:
         self.name = name
         self.device = getattr(base_model, "device", "cpu")
 
-    def predict(self, X, **kwargs):
-        preds = self.base_model.predict(X, **kwargs)
+    def predict(
+        self,
+        X,
+        *,
+        recursive: bool = False,
+        horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
+        **kwargs,
+    ):
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
+        preds = self.base_model.predict(
+            X,
+            recursive=recursive,
+            horizon_h=horizon_h,
+            assimilate=assimilate,
+            Ys=Ys,
+            **kwargs,
+        )
         return np.clip(np.asarray(preds, dtype=float) * self.calibration_factor, 0, None)
 
     @property

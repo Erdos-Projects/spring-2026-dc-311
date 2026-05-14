@@ -3,7 +3,11 @@
 import numpy as np
 import pandas as pd
 
-from modeling.models.utils import ar_lag_columns, recursive_predict_with_lags
+from modeling.models.utils import (
+    ar_lag_columns,
+    normalize_predict_kwargs,
+    recursive_predict_with_lags,
+)
 
 
 class HurdleXGBModel:
@@ -110,8 +114,15 @@ class HurdleXGBModel:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         ar_cols = ar_lag_columns(X)
         if not recursive or not ar_cols:
             return self._base_predict(X)

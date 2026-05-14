@@ -5,7 +5,7 @@ from collections import deque
 import numpy as np
 import pandas as pd
 
-from modeling.models.utils import validate_horizon_h
+from modeling.models.utils import normalize_predict_kwargs, validate_horizon_h
 
 
 DOW_COLS = ("dow_Mon", "dow_Tue", "dow_Wed", "dow_Thu", "dow_Fri", "dow_Sat")
@@ -39,12 +39,17 @@ class LastObservedNaive:
         self,
         X: pd.DataFrame,
         *,
-        recursive: bool = True,
+        recursive: bool = False,
         horizon_h: int | None = None,
         assimilate: bool = False,
         Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         if self.last_value is None:
             raise RuntimeError("Call fit() before predict().")
 
@@ -54,6 +59,8 @@ class LastObservedNaive:
 
         for start, end in _block_ranges(len(X), horizon_h):
             preds[start:end] = max(0.0, current)
+            # With a horizon, each block is a forecast window; observed labels
+            # are assimilated only after the block has completed.
             if assimilate and y_values is not None:
                 current = float(y_values.iloc[end - 1])
 
@@ -86,12 +93,17 @@ class RollingMeanNaive:
         self,
         X: pd.DataFrame,
         *,
-        recursive: bool = True,
+        recursive: bool = False,
         horizon_h: int | None = None,
         assimilate: bool = False,
         Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         y_values = pd.Series(Ys).astype(float).reset_index(drop=True) if Ys is not None else None
         history = deque(self.history, maxlen=self.window)
         preds = np.zeros(len(X), dtype=float)
@@ -102,6 +114,8 @@ class RollingMeanNaive:
             else:
                 prediction = max(0.0, self.fallback)
             preds[start:end] = prediction
+            # horizon_h=None gives one-row blocks, preserving row-by-row
+            # walk-forward assimilation; horizon_h=h assimilates after h rows.
             if assimilate and y_values is not None:
                 for value in y_values.iloc[start:end]:
                     history.append(float(value))
@@ -155,12 +169,17 @@ class SameDOWRollingMeanNaive:
         self,
         X: pd.DataFrame,
         *,
-        recursive: bool = True,
+        recursive: bool = False,
         horizon_h: int | None = None,
         assimilate: bool = False,
         Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         y_values = pd.Series(Ys).astype(float).reset_index(drop=True) if Ys is not None else None
         histories = {
             day: deque(values, maxlen=self.window)
@@ -176,6 +195,8 @@ class SameDOWRollingMeanNaive:
                 else:
                     preds[i] = max(0.0, self.fallback)
 
+            # Keep same-DOW history fixed within a block, then assimilate
+            # observed labels at the boundary.
             if assimilate and y_values is not None:
                 for i in range(start, end):
                     histories[self._dow_key(X.iloc[i])].append(float(y_values.iloc[i]))

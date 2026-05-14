@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 import contextlib
 import sys
 
-from modeling.models.utils import validate_horizon_h
+from modeling.models.utils import normalize_predict_kwargs, validate_horizon_h
 
 class _LoggerWriter:
     """File-like writer that mirrors stdout text to logger."""
@@ -158,6 +158,11 @@ class xgb_sarimax:
         Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         ar_cols = [c for c in X.columns if c.startswith("pothole_lag")]
         if assimilate and Ys is not None and horizon_h is not None:
             return self._predict_blocks_assimilating(X, Ys, horizon_h, ar_cols)
@@ -165,7 +170,7 @@ class xgb_sarimax:
         if not recursive or len(ar_cols) == 0:
             xgb_pred = self._xgb.predict(X)
             correction = self._sarimax_result.forecast(steps=len(X))
-            return xgb_pred + correction
+            return np.clip(xgb_pred + correction, 0, None)
 
         k_AR = max(int(c.replace("pothole_lag", "")) for c in ar_cols)
         print(f"Using recursive prediction with k_AR = {k_AR}")
@@ -173,6 +178,8 @@ class xgb_sarimax:
         h = validate_horizon_h(horizon_h)
         correction = np.asarray(self._sarimax_result.forecast(steps=len(X)))
         X_work = X.copy()
+        for col in ar_cols:
+            X_work[col] = X_work[col].astype(float)
         preds = []
 
         if h is None:
@@ -194,7 +201,7 @@ class xgb_sarimax:
                         X_work.iloc[i, X_work.columns.get_loc(col)] = preds[i - k]
                 xgb_i = self._xgb.predict(X_work.iloc[[i]])[0]
                 preds.append(xgb_i + correction[i])
-        return np.array(preds)
+        return np.clip(np.asarray(preds, dtype=float), 0, None)
 
     def _predict_blocks_assimilating(
         self,
@@ -214,6 +221,8 @@ class xgb_sarimax:
             )
 
         X_work = X.copy()
+        for col in ar_cols:
+            X_work[col] = X_work[col].astype(float)
         preds = []
         residual_state = self._sarimax_result
 
@@ -248,7 +257,7 @@ class xgb_sarimax:
             true_resids = y_block - np.asarray(block_xgb_preds, dtype=float)
             residual_state = residual_state.append(true_resids, refit=False)
 
-        return np.asarray(preds)
+        return np.clip(np.asarray(preds, dtype=float), 0, None)
 
     @property
     def feature_importances_(self) -> np.ndarray:

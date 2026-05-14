@@ -6,6 +6,7 @@ from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor,
 
 from modeling.models.utils import (
     ar_lag_columns,
+    normalize_predict_kwargs,
     recursive_predict_with_lags,
     resolve_sample_weight,
 )
@@ -57,8 +58,15 @@ class _RecursiveRegressorMixin:
         *,
         recursive: bool = False,
         horizon_h: int | None = None,
+        assimilate: bool = False,
+        Ys=None,
         **kwargs,
     ) -> np.ndarray:
+        horizon_h, Ys, kwargs = normalize_predict_kwargs(
+            horizon_h=horizon_h,
+            Ys=Ys,
+            kwargs=kwargs,
+        )
         ar_cols = ar_lag_columns(X)
         if not recursive or not ar_cols:
             return np.clip(self._base_predict(X), 0, None)
