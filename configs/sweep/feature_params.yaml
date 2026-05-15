@@ -1,6 +1,6 @@
 project: DC-311-Pothole-Prediction
 entity: ssule25-university-of-maryland
-name: glm_poisson_d_7_h_7
+name: glm_negbin_d_7_h_11
 
 method: bayes
 metric:
@@ -16,15 +16,15 @@ parameters:
     max: 21
   l_p:
     distribution: int_uniform
-    min: 7
+    min: 11
     max: 14
   d_s:
     distribution: int_uniform
-    min: 7
+    min: 1
     max: 21
   l_s:
     distribution: int_uniform
-    min: 7
+    min: 11
     max: 14
   d_f:
     distribution: int_uniform
@@ -32,7 +32,7 @@ parameters:
     max: 21
   l_f:
     distribution: int_uniform
-    min: 7
+    min: 11
     max: 14
   d_sm07:
     distribution: int_uniform
@@ -40,7 +40,7 @@ parameters:
     max: 21
   l_sm07:
     distribution: int_uniform
-    min: 7
+    min: 11
     max: 14
   d_sm728:
     distribution: int_uniform
@@ -48,9 +48,9 @@ parameters:
     max: 21
   l_sm728:
     distribution: int_uniform
-    min: 7
+    min: 11
     max: 14
   k_AR:
     distribution: int_uniform
-    min: 1
+    min: 0
     max: 10

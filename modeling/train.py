@@ -178,75 +178,69 @@ def train(cfg: DictConfig) -> dict:
             config=OmegaConf.to_container(cfg, resolve=True),
             tags=[cfg.ward.name, cfg.model.name],
         )
-    breakpoint()
     pothole_df, weather_df = build_daily(cfg) # build the daily series 
     feat_df = assemble_features(pothole_df, weather_df, cfg.features) 
     feat_df = make_split(feat_df, cfg.split, cfg.features) # split the data into train, val, and test sets
     feature_cols = [c for c in feat_df.columns if c not in ("date", "Y", "split")]
-    breakpoint()
     train_df = feat_df[feat_df["split"] == "train"] # get the train set
     val_df = feat_df[feat_df["split"] == "val"] # get the val set
     train_val_df = feat_df[feat_df["split"].isin(["train", "val"])] # get the train and val set
-    breakpoint()
     X_train = train_df[feature_cols] # get the features for the train set
     y_train = train_df["Y"] 
-    breakpoint()
     if cfg.debug.verbose:
         print(f"Feature matrix shape : {feat_df.shape}")
         print(f"Train / val / test   : {len(train_df)} / {len(val_df)} / "
               f"{(feat_df['split']=='test').sum()}")
         print(f"Features             : {feature_cols[:5]} … ({len(feature_cols)} total)")
 
-    # ── K-fold CV ─────────────────────────────────────────────────────────────
-    horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
-    cv_metrics = cross_val(
-        cfg.model, X_train, y_train,
-        k=5,
-        horizon_h=horizon_h,
-        d=int(cfg.features.d),
-    )
-    print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
-    breakpoint()
-    # ── Log CV metrics to wandb ───────────────────────────────────────────────
-    if cfg.wandb.enabled:
-        fold_maes  = cv_metrics.pop("_fold_mae")
-        fold_rmses = cv_metrics.pop("_fold_rmse")
-        fold_pds   = cv_metrics.pop("_fold_pd")
-        for i, (f_mae, f_rmse, f_pd) in enumerate(zip(fold_maes, fold_rmses, fold_pds)):
-            wandb.log(
-                {"cv/mae": f_mae, "cv/rmse": f_rmse, "cv/poisson_deviance": f_pd},
-                step=i + 1,
-            )
-        wandb.log({
-            "cv/mean_mae":               cv_metrics["cv_mae"],
-            "cv/std_mae":                cv_metrics["cv_mae_std"],
-            "cv/mean_rmse":              cv_metrics["cv_rmse"],
-            "cv/std_rmse":               cv_metrics["cv_rmse_std"],
-            "cv/mean_poisson_deviance":  cv_metrics["cv_poisson_deviance"],
-            "cv/std_poisson_deviance":   cv_metrics["cv_poisson_deviance_std"],
-        })
-    else:
-        cv_metrics.pop("_fold_mae", None)
-        cv_metrics.pop("_fold_rmse", None)
-        cv_metrics.pop("_fold_pd", None)
 
-    if cfg.debug.dry_run:
-        print("[dry-run] Skipping final fit and model save.")
-        if cfg.wandb.enabled:
-            wandb.finish()
-        return cv_metrics
-    breakpoint()
+    # # ── K-fold CV ─────────────────────────────────────────────────────────────
+    # horizon_h = getattr(getattr(cfg, "evaluate", None), "horizon_h", None)
+    # cv_metrics = cross_val(
+    #     cfg.model, X_train, y_train,
+    #     k=5,
+    #     horizon_h=horizon_h,
+    #     d=int(cfg.features.d),
+    # )
+    # print(f"CV metrics: { {k: v for k, v in cv_metrics.items() if not k.startswith('_')} }") # print the CV metrics
+    # # ── Log CV metrics to wandb ───────────────────────────────────────────────
+    # if cfg.wandb.enabled:
+    #     fold_maes  = cv_metrics.pop("_fold_mae")
+    #     fold_rmses = cv_metrics.pop("_fold_rmse")
+    #     fold_pds   = cv_metrics.pop("_fold_pd")
+    #     for i, (f_mae, f_rmse, f_pd) in enumerate(zip(fold_maes, fold_rmses, fold_pds)):
+    #         wandb.log(
+    #             {"cv/mae": f_mae, "cv/rmse": f_rmse, "cv/poisson_deviance": f_pd},
+    #             step=i + 1,
+    #         )
+    #     wandb.log({
+    #         "cv/mean_mae":               cv_metrics["cv_mae"],
+    #         "cv/std_mae":                cv_metrics["cv_mae_std"],
+    #         "cv/mean_rmse":              cv_metrics["cv_rmse"],
+    #         "cv/std_rmse":               cv_metrics["cv_rmse_std"],
+    #         "cv/mean_poisson_deviance":  cv_metrics["cv_poisson_deviance"],
+    #         "cv/std_poisson_deviance":   cv_metrics["cv_poisson_deviance_std"],
+    #     })
+    # else:
+    #     cv_metrics.pop("_fold_mae", None)
+    #     cv_metrics.pop("_fold_rmse", None)
+    #     cv_metrics.pop("_fold_pd", None)
+
+    # if cfg.debug.dry_run:
+    #     print("[dry-run] Skipping final fit and model save.")
+    #     if cfg.wandb.enabled:
+    #         wandb.finish()
+    #     return cv_metrics
     # ── Final fit on train + val ──────────────────────────────────────────────
     X_tv = train_val_df[feature_cols]
     y_tv = train_val_df["Y"] # get the target for the train and val set
     model = build_model(cfg.model) # build the model
     model.fit(X_tv, y_tv) # fit the model on the train and val set
-    breakpoint()
     # ── Val metrics from the final model (for reference) ─────────────────────
     val_preds = model.predict(
         val_df[feature_cols],
         recursive=True,
-        horizon_h=horizon_h,
+        horizon_h=cfg.evaluate.horizon_h,
         assimilate=True,
         Ys=val_df["Y"],
         d=int(cfg.features.d),

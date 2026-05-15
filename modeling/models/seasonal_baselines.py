@@ -49,7 +49,7 @@ class _LagNaiveBase:
         recursive: bool = True,
         horizon_h: int | None = None,
         assimilate: bool = False,
-        Ys=None,
+        Ys=None, 
         d: int | None = None,
         return_index: bool = False,
         **kwargs,
