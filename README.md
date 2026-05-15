@@ -118,27 +118,41 @@ A key driver of pothole formation is the [freeze-thaw cycle](https://cnycentral.
 - **d_f**: Rolling window size for freeze-thaw count features (days)
 - **d_p**: Rolling window size for precipitation features (days)
 - **d_s**: Rolling window size for snowfall features (days)
+- **d_sm07**: Rolling window size for soil moisture 0-7cm (days)
+- **d_sm728**: Rolling window size for soil moisture 7-28cm (days)
 - **k_AR**: Autoregressive lag window size (number of prior days used as features)
 - **l_f**: Lag offset for freeze-thaw count features (days)
 - **l_p**: Lag offset for precipitation features (days)
 - **l_s**: Lag offset for snowfall features (days)
+- **l_sm07**: Lag offset for soil moisture 0-7cm (days)
+- **l_sm728**: Lag offset for soil moisture 7-28cm (days)
 
 ## 3. Modeling and model selection 
 
-We consider three main families of models for forecasting pothole requests:
+We consider the following families of models for forecasting pothole requests:
 
-1. Generalized Linear Models (GLMs) for count data, including Poisson and Negative
-Binomial variants.
+1. Naive weakly and yearly baselines, 
 
-2. XGBoost with a Poisson objective
+2. Seasonal and simple random walk, 
 
-3. A hybrid XGB-SARIMA model that trains an XG Boost model and then fits a SARIMA model to the residuals to capture any remaining temporal autocorrelation.
+3. Generalized Linear Models (GLMs) for count data, including Poisson and Negative
+Binomial variants,
 
-We discuss the loading, training, and evaluation of these models in [this notebook](4_modeling.ipynb). A key aspect of our modeling approach is that our models are autoregressive--i.e they use lagged values of the target variable as features. We also discuss the issues with data leakage and the approach we took to mitigate it.
+4. Regularized linear models with L2 and L1 regularization, and
+
+3. XGBoost. 
+
+We discuss the loading, training, and evaluation of these models in [this notebook](4_modeling.ipynb). A key aspect of our modeling approach is that our models are autoregressive--i.e they use lagged values of the target variable as features. 
+
+### Handling data leakage
+
+1. When using autoregressive features, our models must use values $Y_{t-1}, ..., Y_{t - k_{AR}}$ as features. However since $Y_{t}$ represents sum of requests up to time $t + (d-1)$, at inference time we do not have access to these features beyond $Y_{t-d}$. The solution to this problem is that at inference, to compute predictions from $t$ up to the horizon $t + h$, we start predicting from $Y_{t-(d-1)}$ and use the sequentially computed values as features for the next prediction. This causes an inherent accumulation of errors during the prediction process as $d$ gets larger, but ensures that we never "look into the future" when predicting. 
+
+2. The lagged weather features face a similar issue: due to the above autoregressive rollout prediction strategy, the model rolls out from $Y_{t-(d-1)}$ up to $Y_{(t+(h-1))}$, leading to a total rollout of $h_{eval} = d + h - 1$. Here $h_{eval}$ is the evaluation horizon and to avoid computing weather features from the future, the lag of any weather variable has to be kept at least $h_{eval}$. 
 
 ### A note on hyperparameter tuning 
 
-We have 7 main hyperparameters to tune for the data, given by the rolling window size of each weather feature (total precipitation, total FTC's, mean snowfall) and the size of the autoregressive window. We additionally want to train a new model for each forecast horizon (1-day, 3-day, 7-day cumulative counts), which may have different optimal hyperparameters. This leads to a combinatorial explosion of hyperparameter combinations--to circumvent this we use Bayesian optimization to efficiently optimize over the hyperparameter space. In particular, we use the in-built Bayesian optimizer in the Weights & Biases library, which allows us to easily track and compare different runs with different hyperparameter settings. The optimization process is configured in `modeling/search/sweep.py`, where we define the search space for the hyperparameters and the objective function that evaluates model performance based on the chosen KPIs. 
+We have 11 main hyperparameters to tune for the data, given by the rolling window size of each weather feature (total precipitation, total FTC's, mean snowfall, two soil moisture readings) and the size of the autoregressive window. We additionally want to train a new model for each forecast horizon (1-day, 3-day, 7-day cumulative counts), which may have different optimal hyperparameters. This leads to a combinatorial explosion of hyperparameter combinations--to circumvent this we use Bayesian optimization to efficiently optimize over the hyperparameter space. In particular, we use the in-built Bayesian optimizer in the Weights & Biases library, which allows us to easily track and compare different runs with different hyperparameter settings. The optimization process is configured in `modeling/search/sweep.py`, where we define the search space for the hyperparameters and the objective function that evaluates model performance based on the chosen KPIs. 
 
 **WARNING** You must have a WandB account and API key to run the Bayesian optimization sweep. You can set up a free account at https://wandb.ai/site and get your API key from your account settings. Once you have your API key, you can set it in your environment variables or directly in the code to enable the sweep functionality. We assume that you have set up your WandB account and API key correctly before running the sweep. If you encounter any issues with WandB integration, please refer to the WandB documentation for troubleshooting steps. In WandB, we first initialize the sweep using the sweep configuration found in `configs/sweep/feature_params.yaml` and then launch a sweep agent (a bunch of parallel processes) that performs the hyperparameter search. A small snippet of code that achieves this is below: 
 
