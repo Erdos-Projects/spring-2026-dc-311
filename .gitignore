@@ -26,3 +26,6 @@ __pycache__/
 
 # local raw csv directory
 /data/csv_data/
+
+# kill all sarima models 
+results/ward3_sarima_*
