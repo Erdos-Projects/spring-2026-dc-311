@@ -265,7 +265,7 @@ def train(cfg: DictConfig) -> dict:
     wx_end   = pd.to_datetime(weather_df["date"].max()).strftime("%Y%m%d")
     wx_range = f"{wx_start}_{wx_end}"
 
-    metrics = {**cv_metrics, **val_metrics, "run_id": run_id, "wx_range": wx_range}
+    metrics = {**val_metrics, "run_id": run_id, "wx_range": wx_range}
 
     if cfg.wandb.enabled and wandb_run is not None:
         metrics["wandb_run_id"] = wandb_run.id
